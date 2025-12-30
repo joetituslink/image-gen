@@ -56,6 +56,8 @@ jobs:
             --exclude=.vscode/
             --exclude=.cursor/
             --exclude=.env
+            --exclude=.env.example
+            --exclude=environment-setup.txt
 
       - name: 📂 Sync Frontend Assets
         uses: SamKirkland/web-deploy@v1

@@ -10,7 +10,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Ensure the generated images directory exists
-const generatedDir = path.join(__dirname, "server", "generated");
+const generatedDir = path.join(__dirname, "generated");
 if (!fs.existsSync(generatedDir)) {
   fs.mkdirSync(generatedDir, { recursive: true });
 }

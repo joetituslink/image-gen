@@ -68,7 +68,7 @@ const config = {
 
 const CLEANUP_INTERVAL = config.cleanup.intervalMinutes * 60 * 1000;
 const MAX_AGE = config.cleanup.maxAgeMinutes * 60 * 1000;
-const generatedDir = path.join(__dirname, "server", "generated");
+const generatedDir = path.join(__dirname, "generated");
 
 try {
   if (!fs.existsSync(generatedDir)) {
@@ -177,7 +177,22 @@ let distPath = possibleDistPaths.find((p) =>
 
 if (distPath) {
   console.log(`Serving frontend from: ${distPath}`);
-  app.use(express.static(distPath));
+
+  if (distPath === ".") {
+    // SECURITY: If serving from root, ONLY serve the assets folder and specific files
+    app.use("/assets", express.static(path.join(__dirname, "assets")));
+
+    ["favicon.ico", "robots.txt", "placeholder.svg"].forEach((file) => {
+      app.get(`/${file}`, (req, res) => {
+        const filePath = path.join(__dirname, file);
+        if (fs.existsSync(filePath)) res.sendFile(filePath);
+        else res.status(404).end();
+      });
+    });
+  } else {
+    app.use(express.static(distPath));
+  }
+
   app.get("*", (req, res, next) => {
     if (req.url.startsWith("/api/")) return next();
     res.sendFile(path.join(distPath, "index.html"));

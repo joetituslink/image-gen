@@ -357,7 +357,7 @@ export const templates = {
       canvas: { width: 1200, height: 630 },
       background: {
         type: "image",
-        imagePath: path.join(__dirname, "server", "assets", "prayer-bg.png"),
+        imagePath: path.join(__dirname, "assets", "prayer-bg.png"),
       },
       banner: {
         type: "centered",
