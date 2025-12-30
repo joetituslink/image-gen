@@ -110,6 +110,21 @@ app.use(express.urlencoded({ extended: true, limit: config.maxRequestSize }));
 // Serve generated images statically
 app.use("/images", express.static(generatedDir));
 
+// Serve frontend static files in production
+const distPath = path.join(__dirname, "../dist");
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+
+  // Catch-all route for SPA (React Router)
+  app.get("*", (req, res, next) => {
+    // If it's an API request that wasn't handled, don't serve index.html
+    if (req.url.startsWith("/api/")) {
+      return next();
+    }
+    res.sendFile(path.join(distPath, "index.html"));
+  });
+}
+
 // ============================================
 // HELPER FUNCTIONS
 // ============================================

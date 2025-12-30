@@ -1,0 +1,55 @@
+name: Publish App
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  web-deploy:
+    name: 🚀 Deploy Website Every Commit
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🚚 Get Latest Code
+        uses: actions/checkout@v4
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: "npm"
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      - name: 🏗️ Build Frontend
+        run: npm run build
+
+      - name: 📂 Sync Files to Server
+        uses: SamKirkland/web-deploy@v1
+        with:
+          source-path: .
+          target-server: digitenet.com
+          remote-user: digitenet.com_wx72ck6r7wq
+          private-ssh-key: ${{ secrets.SSH_KEY }}
+          destination-path: /var/www/vhosts/image-gen.digitenet.com/public
+          rsync-options: >
+            --archive
+            --verbose
+            --compress
+            --human-readable
+            --delete-after
+            --exclude=.git*
+            --exclude=.github/
+            --exclude=node_modules/
+            --exclude=src/
+            --exclude=public/
+            --exclude=*.config.js
+            --exclude=*.config.ts
+            --exclude=tsconfig*.json
+            --exclude=components.json
+            --exclude=README.md
+            --exclude=.vscode/
+            --exclude=.cursor/
+            --exclude=.env
+            --exclude=bun.lockb
