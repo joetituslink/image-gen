@@ -111,8 +111,18 @@ app.use(express.urlencoded({ extended: true, limit: config.maxRequestSize }));
 app.use("/images", express.static(generatedDir));
 
 // Serve frontend static files in production
-const distPath = path.join(__dirname, "../dist");
-if (fs.existsSync(distPath)) {
+// Look for dist folder in parent directory, or fallback to parent directory itself (if dist contents were synced to root)
+const possibleDistPaths = [
+  path.join(__dirname, "../dist"),
+  path.join(__dirname, ".."),
+];
+
+let distPath = possibleDistPaths.find((p) =>
+  fs.existsSync(path.join(p, "index.html"))
+);
+
+if (distPath) {
+  console.log(`Serving frontend from: ${distPath}`);
   app.use(express.static(distPath));
 
   // Catch-all route for SPA (React Router)
@@ -123,6 +133,10 @@ if (fs.existsSync(distPath)) {
     }
     res.sendFile(path.join(distPath, "index.html"));
   });
+} else {
+  console.warn(
+    "⚠️ Frontend build (index.html) not found. API-only mode enabled."
+  );
 }
 
 // ============================================

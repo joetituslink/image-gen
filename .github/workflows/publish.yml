@@ -28,7 +28,7 @@ jobs:
       - name: 🏗️ Build Frontend
         run: npm run build
 
-      - name: 📂 Sync Files to Server
+      - name: 📂 Sync Server Files
         uses: SamKirkland/web-deploy@v1
         with:
           source-path: .
@@ -47,6 +47,7 @@ jobs:
             --exclude=node_modules/
             --exclude=src/
             --exclude=public/
+            --exclude=dist/
             --exclude=*.config.js
             --exclude=*.config.ts
             --exclude=tsconfig*.json
@@ -55,4 +56,17 @@ jobs:
             --exclude=.vscode/
             --exclude=.cursor/
             --exclude=.env
-            --exclude=bun.lockb
+
+      - name: 📂 Sync Frontend Assets
+        uses: SamKirkland/web-deploy@v1
+        with:
+          source-path: ./dist/
+          target-server: digitenet.com
+          remote-user: digitenet.com_wx72ck6r7wq
+          private-ssh-key: ${{ secrets.SSH_KEY }}
+          destination-path: /var/www/vhosts/digitenet.com/image-gen.digitenet.com/public
+          rsync-options: >
+            --archive
+            --verbose
+            --compress
+            --human-readable
