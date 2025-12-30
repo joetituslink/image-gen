@@ -32,7 +32,24 @@ cd image-gen
 
 # Install dependencies
 npm install
+
+# Setup environment variables
+cp .env.example .env
 ```
+
+### Configuration
+
+Create a `.env` file in the root directory (use `.env.example` as a template).
+
+| Variable          | Description                       | Default                    |
+| ----------------- | --------------------------------- | -------------------------- |
+| `APP_NAME`        | Name of the application (Server)  | `Image Gen App`            |
+| `PORT`            | API Server port                   | `3001`                     |
+| `BASE_URL`        | Base URL for images in production | _Auto-detected_            |
+| `CORS_ORIGINS`    | Allowed origins for API access    | `*`                        |
+| `CLEANUP_ENABLED` | Enable automatic image deletion   | `true`                     |
+| `VITE_API_URL`    | API URL for frontend during dev   | `http://localhost:3001`    |
+| `VITE_APP_NAME`   | Display name in the frontend      | `Featured Image Generator` |
 
 ### Development
 

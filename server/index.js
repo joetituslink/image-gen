@@ -9,12 +9,33 @@ import { getTemplateList } from "./templates.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// ============================================
+// ENVIRONMENT CHECK
+// ============================================
+// Throw error if .env file is missing in production
+if (process.env.NODE_ENV === "production") {
+  const envPath = path.join(__dirname, "..", ".env");
+  if (!fs.existsSync(envPath)) {
+    console.error(`\n❌ FATAL ERROR: .env file not found at ${envPath}`);
+    console.error(
+      "In production, the application requires a .env file for configuration."
+    );
+    console.error(
+      "Please create one using .env.example (or environment-setup.txt) as a template.\n"
+    );
+    process.exit(1);
+  }
+}
+
 const app = express();
 
 // ============================================
 // CONFIGURATION - Easy to modify for production
 // ============================================
 const config = {
+  // Application Name
+  appName: process.env.APP_NAME || "Image Gen App",
+
   // Server port (can be set via PORT environment variable)
   port: process.env.PORT || 3001,
 
@@ -266,7 +287,7 @@ app.get("/api/health", (req, res) => {
 // START SERVER
 // ============================================
 app.listen(config.port, () => {
-  console.log(`\n🖼️  Image Gen App API Server`);
+  console.log(`\n🖼️  ${config.appName} API Server`);
   console.log(`${"=".repeat(40)}`);
   console.log(`🚀 Running on http://localhost:${config.port}`);
   console.log(`\n📋 Endpoints:`);

@@ -8,6 +8,10 @@ import { Download, Image, Loader2, Upload, Check, Palette } from "lucide-react";
 import { toast } from "sonner";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
+const APP_NAME = import.meta.env.VITE_APP_NAME || "Featured Image Generator";
+const APP_DESCRIPTION =
+  import.meta.env.VITE_APP_DESCRIPTION ||
+  "Create stunning blog featured images with custom text overlays";
 
 interface TemplatePreview {
   bgGradient: string[];
@@ -173,11 +177,9 @@ const FeaturedImageGenerator = () => {
       <div className="mx-auto max-w-6xl space-y-8">
         <header className="text-center">
           <h1 className="mb-2 text-4xl font-bold tracking-tight text-white md:text-5xl">
-            Featured Image Generator
+            {APP_NAME}
           </h1>
-          <p className="text-lg text-slate-400">
-            Create stunning blog featured images with custom text overlays
-          </p>
+          <p className="text-lg text-slate-400">{APP_DESCRIPTION}</p>
         </header>
 
         {/* Template Selector */}

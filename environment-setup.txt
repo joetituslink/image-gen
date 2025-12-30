@@ -1,0 +1,33 @@
+# --- Server Configuration ---
+# The name of your application
+APP_NAME="Image Gen App"
+
+# Port the server will listen on
+PORT=3001
+
+# The base URL of the API (e.g., https://api.example.com)
+# Leave empty for automatic detection based on the request
+BASE_URL=""
+
+# Allowed CORS origins (comma-separated, or * for all)
+CORS_ORIGINS="*"
+
+# --- Storage & Cleanup ---
+# Whether to automatically delete old generated images
+CLEANUP_ENABLED=true
+# How often to check for old images (in minutes)
+CLEANUP_INTERVAL_MINUTES=5
+# Maximum age of generated images before deletion (in minutes)
+CLEANUP_MAX_AGE_MINUTES=30
+
+# Maximum request body size (e.g., for large background images)
+MAX_REQUEST_SIZE="10mb"
+
+# --- Frontend Configuration (Vite) ---
+# The URL of the API server (used during development)
+VITE_API_URL="http://localhost:3001"
+
+# Frontend display names
+VITE_APP_NAME="Featured Image Generator"
+VITE_APP_DESCRIPTION="Create stunning blog featured images with custom text overlays"
+
