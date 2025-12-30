@@ -49,12 +49,15 @@ const FeaturedImageGenerator = () => {
     const fetchTemplates = async () => {
       try {
         const response = await fetch(`${API_URL}/api/templates`);
+        const data = await response.json().catch(() => ({}));
+
         if (!response.ok) {
           throw new Error(
-            `Server returned ${response.status}: ${response.statusText}`
+            data.error ||
+              `Server returned ${response.status}: ${response.statusText}`
           );
         }
-        const data = await response.json();
+
         if (data.success) {
           setTemplates(data.templates);
         } else {
