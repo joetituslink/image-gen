@@ -36,7 +36,7 @@ const config = {
   maxRequestSize: process.env.MAX_REQUEST_SIZE || "10mb",
 };
 
-// Calculated values
+//calculated values
 const CLEANUP_INTERVAL = config.cleanup.intervalMinutes * 60 * 1000;
 const MAX_AGE = config.cleanup.maxAgeMinutes * 60 * 1000;
 const generatedDir = path.join(__dirname, "generated");
@@ -110,11 +110,12 @@ app.use(express.urlencoded({ extended: true, limit: config.maxRequestSize }));
 // Serve generated images statically
 app.use("/images", express.static(generatedDir));
 
-// Serve frontend static files in production
+// Serving frontend static files in production
 // Look for dist folder in parent directory, or fallback to parent directory itself (if dist contents were synced to root)
 const possibleDistPaths = [
   path.join(__dirname, "../dist"),
   path.join(__dirname, ".."),
+  path.join(__dirname, "."),
 ];
 
 let distPath = possibleDistPaths.find((p) =>

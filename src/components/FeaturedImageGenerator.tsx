@@ -45,13 +45,24 @@ const FeaturedImageGenerator = () => {
     const fetchTemplates = async () => {
       try {
         const response = await fetch(`${API_URL}/api/templates`);
+        if (!response.ok) {
+          throw new Error(
+            `Server returned ${response.status}: ${response.statusText}`
+          );
+        }
         const data = await response.json();
         if (data.success) {
           setTemplates(data.templates);
+        } else {
+          toast.error(
+            `Failed to load templates: ${data.error || "Unknown error"}`
+          );
         }
       } catch (error) {
         console.error("Failed to fetch templates:", error);
-        toast.error("Failed to load templates");
+        toast.error(
+          "Failed to load templates. Please ensure the backend server is running."
+        );
       }
     };
     fetchTemplates();
