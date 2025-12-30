@@ -21,7 +21,9 @@ jobs:
 
       - name: 📦 Install dependencies
         run: |
-          npm install || (rm -rf node_modules package-lock.json && npm install)
+          # Fix for Rollup/NPM bug when moving from Windows to Linux
+          rm -f package-lock.json
+          npm install
 
       - name: 🏗️ Build Frontend
         run: npm run build
