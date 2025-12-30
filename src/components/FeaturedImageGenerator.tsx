@@ -48,7 +48,8 @@ const FeaturedImageGenerator = () => {
   useEffect(() => {
     const fetchTemplates = async () => {
       try {
-        const response = await fetch(`${API_URL}/api/templates`);
+        const url = `${API_URL}/api/templates`;
+        const response = await fetch(url);
         const data = await response.json().catch(() => ({}));
 
         if (!response.ok) {
@@ -67,9 +68,12 @@ const FeaturedImageGenerator = () => {
         }
       } catch (error) {
         console.error("Failed to fetch templates:", error);
-        toast.error(
-          "Failed to load templates. Please ensure the backend server is running."
-        );
+        const isMixedContent =
+          window.location.protocol === "https:" && API_URL.startsWith("http:");
+        const errorMessage = isMixedContent
+          ? "Mixed Content Error: Your VITE_API_URL in .env is http but the site is https. Please change it to https."
+          : "Failed to load templates. Please ensure the backend server is running.";
+        toast.error(errorMessage);
       }
     };
     fetchTemplates();

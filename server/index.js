@@ -54,7 +54,8 @@ const app = express();
 
 const config = {
   appName: process.env.APP_NAME || "Image Gen App",
-  port: process.env.PORT || 3001,
+  // Ensure port is a valid number
+  port: parseInt(process.env.PORT) || 3001,
   baseUrl: process.env.BASE_URL || "",
   corsOrigins: process.env.CORS_ORIGINS || "*",
   cleanup: {
