@@ -10,21 +10,49 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // ============================================
-// ENVIRONMENT CHECK
+// ENVIRONMENT CHECK & LOADING
 // ============================================
-// Throw error if .env file is missing in production
-if (process.env.NODE_ENV === "production") {
+// Function to manually load .env file if it exists (avoids extra dependency)
+function loadEnv() {
   const envPath = path.join(__dirname, "..", ".env");
-  if (!fs.existsSync(envPath)) {
-    console.error(`\n❌ FATAL ERROR: .env file not found at ${envPath}`);
-    console.error(
-      "In production, the application requires a .env file for configuration."
-    );
-    console.error(
-      "Please create one using .env.example (or environment-setup.txt) as a template.\n"
-    );
-    process.exit(1);
+  if (fs.existsSync(envPath)) {
+    try {
+      const envContent = fs.readFileSync(envPath, "utf-8");
+      envContent.split("\n").forEach((line) => {
+        const match = line.match(/^\s*([\w.-]+)\s*=\s*(.*)?\s*$/);
+        if (match) {
+          const key = match[1];
+          let value = (match[2] || "").trim();
+          if (value.startsWith('"') && value.endsWith('"')) {
+            value = value.substring(1, value.length - 1);
+          } else if (value.startsWith("'") && value.endsWith("'")) {
+            value = value.substring(1, value.length - 1);
+          }
+          process.env[key] = value;
+        }
+      });
+      console.log("✅ Environment variables loaded from .env");
+      return true;
+    } catch (err) {
+      console.error("❌ Error reading .env file:", err.message);
+    }
   }
+  return false;
+}
+
+const envLoaded = loadEnv();
+
+// Throw error if .env file is missing in production
+if (process.env.NODE_ENV === "production" && !envLoaded) {
+  const envPath = path.join(__dirname, "..", ".env");
+  console.error(`\n❌ FATAL ERROR: .env file not found at ${envPath}`);
+  console.error(
+    "In production, the application requires a .env file for configuration."
+  );
+  console.error(
+    "Please ensure you renamed environment-setup.txt to .env in the root directory.\n"
+  );
+  process.exit(1);
 }
 
 const app = express();
