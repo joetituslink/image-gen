@@ -35,7 +35,7 @@ jobs:
           target-server: digitenet.com
           remote-user: digitenet.com_wx72ck6r7wq
           private-ssh-key: ${{ secrets.SSH_KEY }}
-          destination-path: /var/www/vhosts/image-gen.digitenet.com/public
+          destination-path: /var/www/vhosts/digitenet.com/image-gen.digitenet.com/public
           rsync-options: >
             --archive
             --verbose
