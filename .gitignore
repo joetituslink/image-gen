@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Vite build outputs (now in root directory)
+index-*.js
+index-*.css
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

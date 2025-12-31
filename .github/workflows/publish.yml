@@ -27,13 +27,8 @@ jobs:
 
       - name: 🏗️ Build Frontend
         run: npm run build
-
-      - name: 🔧 Prepare Production Files
-        run: |
-          # Overwrite the source index.html with the production build
-          cp dist/index.html index.html
-          # Ensure built assets are available at the root for the static server
-          cp -r dist/* . || true
+        env:
+          VITE_BUILD_TO_ROOT: "true"
 
       - name: 📂 Sync Server Files
         uses: SamKirkland/web-deploy@v1
@@ -54,7 +49,6 @@ jobs:
             --exclude=node_modules/
             --exclude=src/
             --exclude=public/
-            --exclude=generated/
             --exclude=*.config.js
             --exclude=*.config.ts
             --exclude=tsconfig*.json
@@ -65,20 +59,3 @@ jobs:
             --exclude=.env
             --exclude=.env.example
             --exclude=environment-setup.txt
-
-      - name: 🔄 Restart Application & Set Permissions
-        uses: appleboy/ssh-action@master
-        with:
-          host: digitenet.com
-          username: digitenet.com_wx72ck6r7wq
-          key: ${{ secrets.SSH_KEY }}
-          script: |
-            cd /var/www/vhosts/digitenet.com/image-gen.digitenet.com
-            # Ensure generated directory exists and is writable
-            mkdir -p generated
-            chmod 775 generated
-            # Ensure tmp directory exists and trigger Passenger restart
-            mkdir -p tmp
-            touch tmp/restart.txt
-            # Log completion
-            echo "Deployment cleanup and restart triggered at $(date)"
