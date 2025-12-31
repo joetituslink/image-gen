@@ -462,7 +462,7 @@ function drawTitle(
   // Dynamic font size adjustment
   const originalFontSize = getFontSize(font);
   const minFontSize = Math.max(originalFontSize * 0.5, 30); // Don't go below 50% of original or 30px
-  const maxLines = 3; // Maximum number of lines before reducing font size
+  const maxLines = 2; // Maximum number of lines before reducing font size
   const maxHeight = bannerBounds
     ? bannerBounds.height * 0.8
     : canvas.height * 0.5;
