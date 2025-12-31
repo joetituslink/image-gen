@@ -160,7 +160,7 @@ const FeaturedImageGenerator = () => {
       const url = URL.createObjectURL(blob);
 
       const link = document.createElement("a");
-      link.download = `featured-image-${Date.now()}.png`;
+      link.download = `featured-image-${Date.now()}.webp`;
       link.href = url;
       link.click();
 

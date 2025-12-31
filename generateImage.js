@@ -531,11 +531,11 @@ export async function generateImage({
   drawSubtitle(ctx, config.subtitle);
 
   // Generate unique filename
-  const filename = `featured-image-${Date.now()}.png`;
+  const filename = `featured-image-${Date.now()}.webp`;
   const filepath = path.join(generatedDir, filename);
 
-  // Save to file
-  const buffer = canvas.toBuffer("image/png");
+  // Save to file in WebP format with optimization
+  const buffer = canvas.toBuffer("image/webp", 80); // 80 is a good balance of quality and size
   fs.writeFileSync(filepath, buffer);
 
   return {

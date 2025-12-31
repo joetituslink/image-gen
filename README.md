@@ -157,8 +157,8 @@ Content-Type: application/json
 ```json
 {
   "success": true,
-  "downloadUrl": "http://localhost:3001/images/featured-image-1234567890.png",
-  "filename": "featured-image-1234567890.png"
+  "downloadUrl": "http://localhost:3001/images/featured-image-1234567890.webp",
+  "filename": "featured-image-1234567890.webp"
 }
 ```
 
