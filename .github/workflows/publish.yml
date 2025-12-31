@@ -47,7 +47,6 @@ jobs:
             --exclude=node_modules/
             --exclude=src/
             --exclude=public/
-            --exclude=dist/
             --exclude=generated/
             --exclude=*.config.js
             --exclude=*.config.ts
@@ -60,17 +59,13 @@ jobs:
             --exclude=.env.example
             --exclude=environment-setup.txt
 
-      - name: 📂 Sync Frontend Assets
-        uses: SamKirkland/web-deploy@v1
+      - name: 🔄 Restart Application
+        uses: appleboy/ssh-action@master
         with:
-          source-path: ./dist/
-          target-server: digitenet.com
-          remote-user: digitenet.com_wx72ck6r7wq
-          private-ssh-key: ${{ secrets.SSH_KEY }}
-          destination-path: /var/www/vhosts/digitenet.com/image-gen.digitenet.com/dist/
-          rsync-options: >
-            --archive
-            --verbose
-            --compress
-            --human-readable
-            --delete-after
+          host: digitenet.com
+          username: digitenet.com_wx72ck6r7wq
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            cd /var/www/vhosts/digitenet.com/image-gen.digitenet.com
+            mkdir -p tmp
+            touch tmp/restart.txt

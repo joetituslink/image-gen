@@ -194,15 +194,13 @@ let distPath = possibleDistPaths.find((p) =>
   fs.existsSync(path.join(p, "index.html"))
 );
 
-// Always serve the assets folder (contains prayer-bg.png, placeholder.svg, etc.)
-app.use("/assets", express.static(path.join(__dirname, "assets")));
-
 if (distPath) {
-  const relativeDistPath = path.relative(__dirname, distPath) || ".";
-  console.log(`Serving frontend from: ${relativeDistPath}`);
+  console.log(`Serving frontend from: ${distPath}`);
 
-  if (relativeDistPath === ".") {
-    // SECURITY: If serving from root, ONLY serve specific files to avoid leaking source code
+  if (distPath === ".") {
+    // SECURITY: If serving from root, ONLY serve the assets folder and specific files
+    app.use("/assets", express.static(path.join(__dirname, "assets")));
+
     ["favicon.ico", "robots.txt", "placeholder.svg"].forEach((file) => {
       app.get(`/${file}`, (req, res) => {
         const filePath = path.join(__dirname, "assets", file);
@@ -211,16 +209,11 @@ if (distPath) {
       });
     });
   } else {
-    // Serve everything in the dist folder
     app.use(express.static(distPath));
   }
 
   app.get("*", (req, res, next) => {
-    // Don't intercept API calls
     if (req.url.startsWith("/api/")) return next();
-    // Don't intercept static file requests that might have reached here if not found in express.static
-    if (req.url.includes(".")) return next();
-
     res.sendFile(path.join(distPath, "index.html"));
   });
 }
