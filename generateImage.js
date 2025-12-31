@@ -22,20 +22,43 @@ async function fetchImageFromUrl(url) {
   return new Promise((resolve, reject) => {
     const protocol = url.startsWith("https") ? https : http;
 
+    const options = {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+      },
+    };
+
     protocol
-      .get(url, (response) => {
-        if (response.statusCode === 301 || response.statusCode === 302) {
-          return fetchImageFromUrl(response.headers.location)
+      .get(url, options, (response) => {
+        // Handle redirects
+        if (
+          response.statusCode >= 300 &&
+          response.statusCode < 400 &&
+          response.headers.location
+        ) {
+          return fetchImageFromUrl(new URL(response.headers.location, url).href)
             .then(resolve)
             .catch(reject);
+        }
+
+        // Handle errors
+        if (response.statusCode !== 200) {
+          return reject(
+            new Error(
+              `Failed to fetch image: ${response.statusCode} ${response.statusMessage}`
+            )
+          );
         }
 
         const chunks = [];
         response.on("data", (chunk) => chunks.push(chunk));
         response.on("end", () => resolve(Buffer.concat(chunks)));
-        response.on("error", reject);
+        response.on("error", (err) =>
+          reject(new Error(`Stream error: ${err.message}`))
+        );
       })
-      .on("error", reject);
+      .on("error", (err) => reject(new Error(`Request error: ${err.message}`)));
   });
 }
 
@@ -82,6 +105,7 @@ async function drawBackground(
       if (bgImageBase64) {
         img = await loadImage(bgImageBase64);
       } else {
+        console.log(`fetching bg image from url: ${bgImageUrl}`);
         const imageBuffer = await fetchImageFromUrl(bgImageUrl);
         img = await loadImage(imageBuffer);
       }
@@ -94,10 +118,12 @@ async function drawBackground(
       ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
       return;
     } catch (error) {
-      console.warn(
-        "Failed to load background image, using template background:",
+      console.error(
+        `Failed to load background image (${bgImageUrl ? "URL" : "Base64"}):`,
         error.message
       );
+      // Re-throw so the API caller knows their custom background failed
+      throw new Error(`Background image loading failed: ${error.message}`);
     }
   }
 
