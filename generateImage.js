@@ -143,7 +143,7 @@ async function drawBackground(
       console.error(`Failed to load background image:`, error.message);
       // Re-throw so the API caller knows their custom background failed
       throw new Error(
-        `Background image loading failed: ${error.message}. Please ensure the image is a valid JPG, PNG, or WebP.`
+        `Background image loading failed: ${error.message}. Please ensure the image is a valid JPG/JPEG, PNG, WebP, AVIF, or SVG.`
       );
     }
   }
