@@ -50,7 +50,17 @@ const FeaturedImageGenerator = () => {
       try {
         const url = `${API_URL}/api/templates`;
         const response = await fetch(url);
-        const data = await response.json().catch(() => ({}));
+
+        const contentType = response.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+          const text = await response.text();
+          console.error("Server returned non-JSON response:", text);
+          throw new Error(
+            `Server returned non-JSON response (${response.status}). The backend might be misconfigured or down.`
+          );
+        }
+
+        const data = await response.json();
 
         if (!response.ok) {
           throw new Error(
@@ -70,9 +80,16 @@ const FeaturedImageGenerator = () => {
         console.error("Failed to fetch templates:", error);
         const isMixedContent =
           window.location.protocol === "https:" && API_URL.startsWith("http:");
-        const errorMessage = isMixedContent
-          ? "Mixed Content Error: Your VITE_API_URL in .env is http but the site is https. Please change it to https."
-          : "Failed to load templates. Please ensure the backend server is running.";
+
+        let errorMessage =
+          "Failed to load templates. Please ensure the backend server is running.";
+        if (isMixedContent) {
+          errorMessage =
+            "Mixed Content Error: Your VITE_API_URL in .env is http but the site is https. Please change it to https.";
+        } else if (error instanceof Error) {
+          errorMessage = error.message;
+        }
+
         toast.error(errorMessage);
       }
     };
@@ -123,6 +140,15 @@ const FeaturedImageGenerator = () => {
         },
         body: JSON.stringify(body),
       });
+
+      const contentType = response.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const text = await response.text();
+        console.error("Server returned non-JSON response:", text);
+        throw new Error(
+          `Server returned non-JSON response (${response.status}). The backend might be misconfigured or down.`
+        );
+      }
 
       const data = await response.json();
 

@@ -94,6 +94,15 @@ app.use(cors(corsOptions));
 app.set("trust proxy", true);
 app.use(express.json({ limit: config.maxRequestSize }));
 app.use(express.urlencoded({ extended: true, limit: config.maxRequestSize }));
+
+// Request Logger for debugging production issues
+app.use((req, res, next) => {
+  if (req.url.startsWith("/api/")) {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  }
+  next();
+});
+
 app.use("/images", express.static(generatedDir));
 
 // ============================================
