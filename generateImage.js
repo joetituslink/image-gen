@@ -140,11 +140,10 @@ async function drawBackground(
       ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
       return;
     } catch (error) {
-      console.error(`Failed to load background image:`, error.message);
-      // Re-throw so the API caller knows their custom background failed
-      throw new Error(
-        `Background image loading failed: ${error.message}. Please ensure the image is a valid JPG/JPEG, PNG, WebP, AVIF, or SVG.`
+      console.warn(
+        `Failed to load custom background image, falling back to template background: ${error.message}`
       );
+      // Fall through to template background logic below
     }
   }
 

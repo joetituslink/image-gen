@@ -140,17 +140,17 @@ Content-Type: application/json
 }
 ```
 
-| Parameter       | Type   | Required | Default          | Description                                                          |
-| --------------- | ------ | -------- | ---------------- | -------------------------------------------------------------------- |
-| `mainText`      | string | ✅ Yes   | -                | Main title text                                                      |
-| `templateId`    | string | No       | `"classic"`      | Template ID to use                                                   |
-| `categoryText`  | string | No       | `"CATEGORY"`     | Category/subtitle text                                               |
-| `bgImageUrl`    | string | No       | -                | URL to background image (Supports JPG, PNG, WebP, AVIF, SVG)         |
-| `bgImageBase64` | string | No       | -                | Base64 encoded background image (Supports JPG, PNG, WebP, AVIF, SVG) |
-| `bannerColor`   | string | No       | Template default | Banner color (hex)                                                   |
-| `bannerOpacity` | number | No       | Template default | Banner opacity (0-1)                                                 |
-| `categoryColor` | string | No       | Template default | Category text color (hex)                                            |
-| `titleColor`    | string | No       | Template default | Title text color (hex)                                               |
+| Parameter       | Type   | Required | Default          | Description                                                                                                               |
+| --------------- | ------ | -------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `mainText`      | string | ✅ Yes   | -                | Main title text                                                                                                           |
+| `templateId`    | string | No       | `"classic"`      | Template ID to use                                                                                                        |
+| `categoryText`  | string | No       | `"CATEGORY"`     | Category/subtitle text                                                                                                    |
+| `bgImageUrl`    | string | No       | -                | URL to background image (Supports JPG, PNG, WebP, AVIF, SVG). Falls back to template background if loading fails.         |
+| `bgImageBase64` | string | No       | -                | Base64 encoded background image (Supports JPG, PNG, WebP, AVIF, SVG). Falls back to template background if loading fails. |
+| `bannerColor`   | string | No       | Template default | Banner color (hex)                                                                                                        |
+| `bannerOpacity` | number | No       | Template default | Banner opacity (0-1)                                                                                                      |
+| `categoryColor` | string | No       | Template default | Category text color (hex)                                                                                                 |
+| `titleColor`    | string | No       | Template default | Title text color (hex)                                                                                                    |
 
 **Response:**
 
