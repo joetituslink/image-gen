@@ -10,7 +10,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // ============================================
-// ENVIRONMENT CHECK & LOADING
+// ENVIRONMENT CHECK & LOADINGG
 // ============================================
 function loadEnv() {
   const envPath = path.join(__dirname, ".env");

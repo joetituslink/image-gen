@@ -28,7 +28,7 @@ export default defineConfig(({ mode }) => ({
   build: {
     outDir: process.env.VITE_BUILD_TO_ROOT === "true" ? "." : "dist",
     emptyOutDir: process.env.VITE_BUILD_TO_ROOT === "true" ? false : true,
-    assetsDir: "",
+    assetsDir: process.env.VITE_BUILD_TO_ROOT === "true" ? "dist" : "assets",
     rollupOptions: {
       output: {
         assetFileNames: (assetInfo) => {
