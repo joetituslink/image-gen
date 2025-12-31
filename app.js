@@ -103,7 +103,17 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use("/images", express.static(generatedDir));
+// Serve generated images with correct Content-Type for WebP
+app.use(
+  "/images",
+  express.static(generatedDir, {
+    setHeaders: (res, path) => {
+      if (path.endsWith(".webp")) {
+        res.setHeader("Content-Type", "image/webp");
+      }
+    },
+  })
+);
 
 // ============================================
 // API ROUTES (Before Frontend Static)

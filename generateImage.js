@@ -408,7 +408,11 @@ function drawTitle(
   if (titleConfig.style === "italic") {
     font = font.replace(/^(\d+)/, "italic $1");
   }
-  ctx.font = font;
+
+  // Extract base font size to allow scaling
+  const fontSizeMatch = font.match(/(\d+)px/);
+  const baseFontSize = fontSizeMatch ? parseInt(fontSizeMatch[1]) : 64;
+  const lineHeightRatio = (titleConfig.lineHeight || 80) / baseFontSize;
 
   const align = titleConfig.align || "center";
   ctx.textAlign = align;
@@ -425,10 +429,29 @@ function drawTitle(
     maxWidth = canvas.width - 200;
   }
 
-  const lines = wrapText(ctx, titleText, maxWidth);
-  const lineHeight = titleConfig.lineHeight || 80;
+  // Dynamic font size reduction
+  let fontSize = baseFontSize;
+  let lines;
+  let lineHeight;
+  let totalHeight;
+  const maxAllowedHeight = bannerBounds
+    ? bannerBounds.height * 0.75
+    : canvas.height * 0.5;
 
-  let x, startY;
+  do {
+    const currentFont = font.replace(`${baseFontSize}px`, `${fontSize}px`);
+    ctx.font = currentFont;
+    lineHeight = fontSize * lineHeightRatio;
+    lines = wrapText(ctx, titleText, maxWidth);
+    totalHeight = lines.length * lineHeight;
+
+    if (totalHeight <= maxAllowedHeight || fontSize <= 24) {
+      break;
+    }
+    fontSize -= 2;
+  } while (fontSize > 24);
+
+  let x, centerY;
 
   if (titleConfig.x !== undefined) {
     x = titleConfig.x;
@@ -439,12 +462,25 @@ function drawTitle(
   }
 
   if (titleConfig.y !== undefined) {
-    startY = titleConfig.y;
+    centerY = titleConfig.y;
   } else if (categoryY && titleConfig.offsetY) {
-    startY = categoryY + titleConfig.offsetY;
+    centerY = categoryY + titleConfig.offsetY;
   } else if (bannerBounds) {
-    startY = bannerBounds.y + bannerBounds.height / 2;
+    centerY = bannerBounds.y + bannerBounds.height / 2;
+    // If we have a category above, we might need to adjust centerY
+    if (categoryY) {
+      // If there's a category, we want to center the title in the remaining space
+      const spaceBelowCategory =
+        bannerBounds.y + bannerBounds.height - categoryY;
+      centerY = categoryY + spaceBelowCategory / 2;
+    }
+  } else {
+    centerY = canvas.height / 2;
   }
+
+  // Calculate the starting Y to vertically center the entire block of text
+  const blockHeight = (lines.length - 1) * lineHeight;
+  const startY = centerY - blockHeight / 2;
 
   lines.forEach((line, index) => {
     ctx.fillText(line, x, startY + index * lineHeight);
