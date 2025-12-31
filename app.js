@@ -193,7 +193,7 @@ if (distPath) {
 
     ["favicon.ico", "robots.txt", "placeholder.svg"].forEach((file) => {
       app.get(`/${file}`, (req, res) => {
-        const filePath = path.join(__dirname, file);
+        const filePath = path.join(__dirname, "assets", file);
         if (fs.existsSync(filePath)) res.sendFile(filePath);
         else res.status(404).end();
       });

@@ -19,9 +19,30 @@ export default defineConfig(({ mode }) => ({
     },
   },
   plugins: [react()],
+  publicDir: false,
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+    },
+  },
+  build: {
+    assetsDir: "",
+    rollupOptions: {
+      output: {
+        assetFileNames: (assetInfo) => {
+          if (
+            assetInfo.name &&
+            (assetInfo.name.endsWith(".ico") ||
+              assetInfo.name.endsWith(".svg") ||
+              assetInfo.name.endsWith(".txt"))
+          ) {
+            return "[name][extname]"; // Keep original names for static assets if they are processed by vite
+          }
+          return "[name]-[hash][extname]";
+        },
+        chunkFileNames: "[name]-[hash].js",
+        entryFileNames: "[name]-[hash].js",
+      },
     },
   },
 }));
