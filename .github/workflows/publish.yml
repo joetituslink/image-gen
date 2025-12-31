@@ -66,7 +66,7 @@ jobs:
             --exclude=.env.example
             --exclude=environment-setup.txt
 
-      - name: 🔄 Restart Application
+      - name: 🔄 Restart Application & Set Permissions
         uses: appleboy/ssh-action@master
         with:
           host: digitenet.com
@@ -74,5 +74,11 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           script: |
             cd /var/www/vhosts/digitenet.com/image-gen.digitenet.com
+            # Ensure generated directory exists and is writable
+            mkdir -p generated
+            chmod 775 generated
+            # Ensure tmp directory exists and trigger Passenger restart
             mkdir -p tmp
             touch tmp/restart.txt
+            # Log completion
+            echo "Deployment cleanup and restart triggered at $(date)"
