@@ -59,3 +59,14 @@ jobs:
             --exclude=.env
             --exclude=.env.example
             --exclude=environment-setup.txt
+
+      - name: 🔄 Restart Server
+        uses: appleboy/ssh-action@master
+        with:
+          host: digitenet.com
+          username: digitenet.com_wx72ck6r7wq
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            cd /var/www/vhosts/digitenet.com/image-gen.digitenet.com
+            # Restart Phusion Passenger on Plesk
+            mkdir -p tmp && touch tmp/restart.txt
