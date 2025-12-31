@@ -103,12 +103,34 @@ async function drawBackground(
     try {
       let img;
       if (bgImageBase64) {
+        console.log("Loading background from Base64");
         img = await loadImage(bgImageBase64);
+      } else if (bgImageUrl.startsWith("data:image")) {
+        console.log("Loading background from Data URI in URL field");
+        img = await loadImage(bgImageUrl);
       } else {
-        console.log(`fetching bg image from url: ${bgImageUrl}`);
+        console.log(`Fetching bg image from URL: ${bgImageUrl}`);
         const imageBuffer = await fetchImageFromUrl(bgImageUrl);
-        img = await loadImage(imageBuffer);
+
+        if (!imageBuffer || imageBuffer.length === 0) {
+          throw new Error("Fetched image buffer is empty");
+        }
+
+        console.log(
+          `Successfully fetched image, size: ${imageBuffer.length} bytes`
+        );
+        try {
+          img = await loadImage(imageBuffer);
+        } catch (loadError) {
+          console.error(
+            `Canvas loadImage failed for buffer: ${loadError.message}`
+          );
+          // If it's a "Unsupported image type" error, it's often because the buffer
+          // is not a standard image format or the library lacks support for it.
+          throw loadError;
+        }
       }
+
       const scale = Math.max(
         canvas.width / img.width,
         canvas.height / img.height
@@ -118,12 +140,11 @@ async function drawBackground(
       ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
       return;
     } catch (error) {
-      console.error(
-        `Failed to load background image (${bgImageUrl ? "URL" : "Base64"}):`,
-        error.message
-      );
+      console.error(`Failed to load background image:`, error.message);
       // Re-throw so the API caller knows their custom background failed
-      throw new Error(`Background image loading failed: ${error.message}`);
+      throw new Error(
+        `Background image loading failed: ${error.message}. Please ensure the image is a valid JPG, PNG, or WebP.`
+      );
     }
   }
 

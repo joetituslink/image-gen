@@ -10,7 +10,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // ============================================
-// ENVIRONMENT CHECK & LOADINGG
+// ENVIRONMENT CHECK & LOADING
 // ============================================
 function loadEnv() {
   const envPath = path.join(__dirname, ".env");
@@ -69,14 +69,20 @@ const config = {
 const CLEANUP_INTERVAL = config.cleanup.intervalMinutes * 60 * 1000;
 const MAX_AGE = config.cleanup.maxAgeMinutes * 60 * 1000;
 const generatedDir = path.join(__dirname, "generated");
+const tmpDir = path.join(__dirname, "tmp");
 
 try {
   if (!fs.existsSync(generatedDir)) {
     fs.mkdirSync(generatedDir, { recursive: true });
     console.log("✅ Created generated images directory");
   }
+  // Ensure tmp directory exists for Passenger restart
+  if (!fs.existsSync(tmpDir)) {
+    fs.mkdirSync(tmpDir, { recursive: true });
+    console.log("✅ Created tmp directory");
+  }
 } catch (err) {
-  console.error("❌ ERROR creating generated directory:", err.message);
+  console.error("❌ ERROR creating directories:", err.message);
 }
 
 // ============================================
@@ -175,9 +181,10 @@ app.get("/api/health", (req, res) => {
 // ============================================
 // FRONTEND SERVING
 // ============================================
+// In production, Vite builds index.html to root, but JS/CSS to /dist
 const possibleDistPaths = [
-  path.join(__dirname, "dist"),
-  path.join(__dirname, "."),
+  path.join(__dirname, "."), // Production: index.html in root
+  path.join(__dirname, "dist"), // Local/Fallback
 ];
 
 let distPath = possibleDistPaths.find((p) =>
@@ -185,15 +192,27 @@ let distPath = possibleDistPaths.find((p) =>
 );
 
 if (distPath) {
-  console.log(`Serving frontend from: ${distPath}`);
+  const isRoot = distPath === path.join(__dirname, ".");
+  console.log(`Serving frontend from: ${isRoot ? "root" : "dist folder"}`);
 
-  if (distPath === ".") {
-    // SECURITY: If serving from root, ONLY serve the assets folder and specific files
+  if (isRoot) {
+    // 1. Serve compiled assets from the dist folder
+    app.use(
+      "/dist",
+      express.static(path.join(__dirname, "dist"), {
+        immutable: true,
+        maxAge: "1y",
+      })
+    );
+
+    // 2. Serve public assets from the assets folder
     app.use("/assets", express.static(path.join(__dirname, "assets")));
 
-    ["favicon.ico", "robots.txt", "placeholder.svg"].forEach((file) => {
+    // 3. Serve specific root files
+    const rootFiles = ["favicon.ico", "robots.txt", "placeholder.svg"];
+    rootFiles.forEach((file) => {
       app.get(`/${file}`, (req, res) => {
-        const filePath = path.join(__dirname, "assets", file);
+        const filePath = path.join(__dirname, file);
         if (fs.existsSync(filePath)) res.sendFile(filePath);
         else res.status(404).end();
       });
@@ -206,6 +225,8 @@ if (distPath) {
     if (req.url.startsWith("/api/")) return next();
     res.sendFile(path.join(distPath, "index.html"));
   });
+} else {
+  console.warn("⚠️  Frontend build not found. Run 'npm run build' first.");
 }
 
 // ============================================

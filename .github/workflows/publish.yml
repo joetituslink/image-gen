@@ -68,5 +68,7 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           script: |
             cd /var/www/vhosts/digitenet.com/image-gen.digitenet.com
-            # Restart Phusion Passenger on Plesk
-            mkdir -p tmp && touch tmp/restart.txt
+            # Ensure tmp directory exists and trigger Passenger restart
+            mkdir -p tmp
+            touch tmp/restart.txt
+            echo "✅ Server restart triggered via tmp/restart.txt"
