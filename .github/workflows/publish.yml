@@ -48,6 +48,7 @@ jobs:
             --exclude=src/
             --exclude=public/
             --exclude=dist/
+            --exclude=generated/
             --exclude=*.config.js
             --exclude=*.config.ts
             --exclude=tsconfig*.json
@@ -66,9 +67,10 @@ jobs:
           target-server: digitenet.com
           remote-user: digitenet.com_wx72ck6r7wq
           private-ssh-key: ${{ secrets.SSH_KEY }}
-          destination-path: /var/www/vhosts/digitenet.com/image-gen.digitenet.com
+          destination-path: /var/www/vhosts/digitenet.com/image-gen.digitenet.com/dist/
           rsync-options: >
             --archive
             --verbose
             --compress
             --human-readable
+            --delete-after
