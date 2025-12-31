@@ -28,6 +28,13 @@ jobs:
       - name: 🏗️ Build Frontend
         run: npm run build
 
+      - name: 🔧 Prepare Production Files
+        run: |
+          # Overwrite the source index.html with the production build
+          cp dist/index.html index.html
+          # Ensure built assets are available at the root for the static server
+          cp -r dist/* . || true
+
       - name: 📂 Sync Server Files
         uses: SamKirkland/web-deploy@v1
         with:
