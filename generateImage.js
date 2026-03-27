@@ -243,6 +243,214 @@ function roundRect(ctx, x, y, width, height, radius) {
   ctx.closePath();
 }
 
+const avatarPresetBackgrounds = {
+  user: "#2563eb",
+  messageCircle: "#7c3aed",
+  heart: "#ec4899",
+  sparkles: "#f59e0b",
+  camera: "#0f766e",
+};
+
+function drawStar(ctx, centerX, centerY, outerRadius, innerRadius, points = 4) {
+  ctx.beginPath();
+  for (let i = 0; i < points * 2; i++) {
+    const angle = -Math.PI / 2 + (i * Math.PI) / points;
+    const radius = i % 2 === 0 ? outerRadius : innerRadius;
+    const x = centerX + Math.cos(angle) * radius;
+    const y = centerY + Math.sin(angle) * radius;
+    if (i === 0) {
+      ctx.moveTo(x, y);
+    } else {
+      ctx.lineTo(x, y);
+    }
+  }
+  ctx.closePath();
+}
+
+function drawAvatarIcon(ctx, preset, x, y, size, color) {
+  const centerX = x + size / 2;
+  const centerY = y + size / 2;
+
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = size * 0.07;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  switch (preset) {
+    case "messageCircle": {
+      const bubbleX = x + size * 0.25;
+      const bubbleY = y + size * 0.27;
+      const bubbleWidth = size * 0.5;
+      const bubbleHeight = size * 0.34;
+      roundRect(ctx, bubbleX, bubbleY, bubbleWidth, bubbleHeight, size * 0.08);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(bubbleX + bubbleWidth * 0.35, bubbleY + bubbleHeight);
+      ctx.lineTo(bubbleX + bubbleWidth * 0.46, bubbleY + bubbleHeight + size * 0.1);
+      ctx.lineTo(bubbleX + bubbleWidth * 0.58, bubbleY + bubbleHeight);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(bubbleX + size * 0.09, bubbleY + size * 0.11);
+      ctx.lineTo(bubbleX + bubbleWidth - size * 0.09, bubbleY + size * 0.11);
+      ctx.moveTo(bubbleX + size * 0.09, bubbleY + size * 0.2);
+      ctx.lineTo(bubbleX + bubbleWidth * 0.62, bubbleY + size * 0.2);
+      ctx.stroke();
+      break;
+    }
+    case "heart":
+      ctx.beginPath();
+      ctx.moveTo(centerX, y + size * 0.78);
+      ctx.bezierCurveTo(
+        x + size * 0.14,
+        y + size * 0.6,
+        x + size * 0.16,
+        y + size * 0.28,
+        centerX,
+        y + size * 0.38
+      );
+      ctx.bezierCurveTo(
+        x + size * 0.84,
+        y + size * 0.28,
+        x + size * 0.86,
+        y + size * 0.6,
+        centerX,
+        y + size * 0.78
+      );
+      ctx.fill();
+      break;
+    case "sparkles":
+      drawStar(ctx, centerX, centerY, size * 0.2, size * 0.08);
+      ctx.fill();
+      drawStar(
+        ctx,
+        x + size * 0.3,
+        y + size * 0.32,
+        size * 0.07,
+        size * 0.03
+      );
+      ctx.fill();
+      drawStar(
+        ctx,
+        x + size * 0.74,
+        y + size * 0.72,
+        size * 0.08,
+        size * 0.035
+      );
+      ctx.fill();
+      break;
+    case "camera": {
+      const bodyX = x + size * 0.22;
+      const bodyY = y + size * 0.34;
+      const bodyWidth = size * 0.56;
+      const bodyHeight = size * 0.28;
+      roundRect(ctx, bodyX, bodyY, bodyWidth, bodyHeight, size * 0.06);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, size * 0.11, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(bodyX + size * 0.09, bodyY);
+      ctx.lineTo(bodyX + size * 0.17, y + size * 0.26);
+      ctx.lineTo(bodyX + size * 0.34, y + size * 0.26);
+      ctx.lineTo(bodyX + size * 0.4, bodyY);
+      ctx.stroke();
+      break;
+    }
+    case "user":
+    default:
+      ctx.beginPath();
+      ctx.arc(centerX, y + size * 0.38, size * 0.14, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(centerX, y + size * 0.78, size * 0.26, Math.PI, 0);
+      ctx.stroke();
+      break;
+  }
+
+  ctx.restore();
+}
+
+async function drawAvatar(ctx, avatarConfig, avatarImageBase64, avatarIcon) {
+  if (!avatarConfig) return;
+
+  const { x, y, size } = avatarConfig;
+  const centerX = x + size / 2;
+  const centerY = y + size / 2;
+  const radius = size / 2;
+  const preset = avatarPresetBackgrounds[avatarIcon]
+    ? avatarIcon
+    : avatarConfig.defaultPreset || "user";
+  const backgroundColor =
+    avatarConfig.backgroundColor || avatarPresetBackgrounds[preset] || "#2563eb";
+  const borderColor = avatarConfig.borderColor || "#ffffff";
+  const borderWidth = avatarConfig.borderWidth || 0;
+  const iconColor = avatarConfig.iconColor || "#ffffff";
+
+  if (avatarConfig.shadow) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.fillStyle = "rgba(15, 23, 42, 0.18)";
+    ctx.shadowColor = avatarConfig.shadow.color;
+    ctx.shadowBlur = avatarConfig.shadow.blur;
+    ctx.shadowOffsetY = avatarConfig.shadow.offsetY || 0;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+  ctx.closePath();
+  ctx.clip();
+
+  let drewCustomAvatar = false;
+
+  if (avatarImageBase64) {
+    try {
+      const avatarImage = await loadImage(avatarImageBase64);
+      const scale = Math.max(size / avatarImage.width, size / avatarImage.height);
+      const drawWidth = avatarImage.width * scale;
+      const drawHeight = avatarImage.height * scale;
+      const drawX = x + (size - drawWidth) / 2;
+      const drawY = y + (size - drawHeight) / 2;
+      ctx.drawImage(avatarImage, drawX, drawY, drawWidth, drawHeight);
+      drewCustomAvatar = true;
+    } catch (error) {
+      console.warn(
+        `Failed to load custom avatar, falling back to preset icon: ${error.message}`
+      );
+    }
+  }
+
+  if (!drewCustomAvatar) {
+    ctx.fillStyle = backgroundColor;
+    ctx.fillRect(x, y, size, size);
+    drawAvatarIcon(ctx, preset, x, y, size, iconColor);
+  }
+
+  ctx.restore();
+
+  if (borderWidth > 0) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, radius - borderWidth / 2, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = borderWidth;
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
 /**
  * Draw banner based on config
  */
@@ -461,8 +669,11 @@ function drawTitle(
 
   // Dynamic font size adjustment
   const originalFontSize = getFontSize(font);
-  const minFontSize = Math.max(originalFontSize * 0.5, 30); // Don't go below 50% of original or 30px
-  const maxLines = 2; // Maximum number of lines before reducing font size
+  const minFontSize = Math.max(
+    originalFontSize * (titleConfig.minScale || 0.5),
+    24
+  );
+  const maxLines = titleConfig.maxLines || 2;
   const maxHeight = bannerBounds
     ? bannerBounds.height * 0.8
     : canvas.height * 0.5;
@@ -552,10 +763,14 @@ export async function generateImage({
   mainText,
   bgImageUrl,
   bgImageBase64,
+  avatarImageBase64,
+  avatarIcon,
   bannerColor,
   bannerOpacity,
   categoryColor,
   titleColor,
+  outputFilename,
+  outputDir,
 }) {
   const template = getTemplate(templateId);
   const config = template.config;
@@ -585,6 +800,9 @@ export async function generateImage({
     bannerOpacity
   );
 
+  // Draw avatar if configured
+  await drawAvatar(ctx, config.avatar, avatarImageBase64, avatarIcon);
+
   // Draw category text
   const categoryY = drawCategory(
     ctx,
@@ -609,9 +827,13 @@ export async function generateImage({
   // Draw subtitle if configured
   drawSubtitle(ctx, config.subtitle);
 
-  // Generate unique filename
-  const filename = `featured-image-${Date.now()}.webp`;
-  const filepath = path.join(generatedDir, filename);
+  const targetDir = outputDir || generatedDir;
+  if (!fs.existsSync(targetDir)) {
+    fs.mkdirSync(targetDir, { recursive: true });
+  }
+
+  const filename = outputFilename || `featured-image-${Date.now()}.webp`;
+  const filepath = path.join(targetDir, filename);
 
   // Save to file in WebP format with optimization
   const buffer = canvas.toBuffer("image/webp", 80); // 80 is a good balance of quality and size

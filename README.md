@@ -9,8 +9,9 @@ A powerful featured image generator with customizable templates and text overlay
 
 ## ✨ Features
 
-- **6 Beautiful Templates** - Classic, Modern Dark, Minimal, Vibrant, Editorial, and Prayer Cover
+- **7 Beautiful Templates** - Classic, Modern Dark, Minimal, Vibrant, Editorial, Social Message, and Prayer Cover
 - **Custom Background Images** - Upload your own or use template defaults
+- **Avatar Support** - Use a built-in icon or upload a profile image for the Social Message template
 - **Color Customization** - Override template colors for banner, category, and title
 - **REST API** - Programmatic access for automation and integrations
 - **Auto-cleanup** - Generated images are automatically deleted after 30 minutes
@@ -55,12 +56,14 @@ Create a `.env` file in the root directory (use `.env.example` as a template).
 
 ```bash
 # Run both frontend and API server
-npm run dev:all
+npm run dev
 
 # Or run separately:
-npm run dev       # Frontend only (http://localhost:8080)
+npm run dev:web   # Frontend only (http://localhost:8080)
 npm run dev:api   # API only (http://localhost:3001)
 ```
+
+If you run the frontend by itself, Vite will proxy `/api/*` requests to port `3001`, so the API server must also be running or you will see `ECONNREFUSED` proxy errors.
 
 ### Production
 
@@ -81,6 +84,7 @@ npm start
 | **Minimal**      | `minimal`     | Ultra clean design with subtle bottom accent        |
 | **Vibrant**      | `vibrant`     | Colorful gradient background with floating card     |
 | **Editorial**    | `editorial`   | Magazine-style layout with bold typography          |
+| **Social Message** | `socialMessage` | Social media-inspired card with avatar support    |
 | **Prayer Cover** | `prayerCover` | Spiritual themed cover with soft pink-cyan gradient |
 
 ## 🔧 API Reference
@@ -133,6 +137,8 @@ Content-Type: application/json
   "mainText": "How to Have a Better Work-Life Balance",
   "bgImageUrl": "https://example.com/image.jpg",
   "bgImageBase64": "data:image/png;base64,...",
+  "avatarImageBase64": "data:image/png;base64,...",
+  "avatarIcon": "messageCircle",
   "bannerColor": "#ffffff",
   "bannerOpacity": 0.85,
   "categoryColor": "#c67c4e",
@@ -147,6 +153,8 @@ Content-Type: application/json
 | `categoryText`  | string | No       | `"CATEGORY"`     | Category/subtitle text                                                                                                    |
 | `bgImageUrl`    | string | No       | -                | URL to background image (Supports JPG, PNG, WebP, AVIF, SVG). Falls back to template background if loading fails.         |
 | `bgImageBase64` | string | No       | -                | Base64 encoded background image (Supports JPG, PNG, WebP, AVIF, SVG). Falls back to template background if loading fails. |
+| `avatarImageBase64` | string | No   | -                | Base64 encoded avatar image for the `socialMessage` template. Falls back to a preset icon if loading fails.              |
+| `avatarIcon`    | string | No       | `"user"`         | Preset avatar icon for the `socialMessage` template. Supported values: `user`, `messageCircle`, `heart`, `sparkles`, `camera`. |
 | `bannerColor`   | string | No       | Template default | Banner color (hex)                                                                                                        |
 | `bannerOpacity` | number | No       | Template default | Banner opacity (0-1)                                                                                                      |
 | `categoryColor` | string | No       | Template default | Category text color (hex)                                                                                                 |

@@ -4,7 +4,7 @@ import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
 import { generateImage } from "./generateImage.js";
-import { getTemplateList } from "./templates.js";
+import { getTemplateList, getTemplatePreviewSeed } from "./templates.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -69,12 +69,21 @@ const config = {
 const CLEANUP_INTERVAL = config.cleanup.intervalMinutes * 60 * 1000;
 const MAX_AGE = config.cleanup.maxAgeMinutes * 60 * 1000;
 const generatedDir = path.join(__dirname, "generated");
+const templatePreviewDir = path.join(generatedDir, "template-previews");
 const tmpDir = path.join(__dirname, "tmp");
+const previewSourceFiles = [
+  path.join(__dirname, "templates.js"),
+  path.join(__dirname, "generateImage.js"),
+];
 
 try {
   if (!fs.existsSync(generatedDir)) {
     fs.mkdirSync(generatedDir, { recursive: true });
     console.log("✅ Created generated images directory");
+  }
+  if (!fs.existsSync(templatePreviewDir)) {
+    fs.mkdirSync(templatePreviewDir, { recursive: true });
+    console.log("✅ Created template preview directory");
   }
   // Ensure tmp directory exists for Passenger restart
   if (!fs.existsSync(tmpDir)) {
@@ -114,9 +123,49 @@ app.use("/images", express.static(generatedDir));
 // ============================================
 // API ROUTES (Before Frontend Static)
 // ============================================
-app.get("/api/templates", (req, res) => {
+async function ensureTemplatePreviews() {
+  const templates = getTemplateList();
+  const sourceModifiedAt = Math.max(
+    ...previewSourceFiles
+      .filter((filePath) => fs.existsSync(filePath))
+      .map((filePath) => fs.statSync(filePath).mtimeMs)
+  );
+
+  for (const template of templates) {
+    const previewFilename = `${template.id}.webp`;
+    const previewPath = path.join(templatePreviewDir, previewFilename);
+    const shouldGenerate =
+      !fs.existsSync(previewPath) ||
+      fs.statSync(previewPath).mtimeMs < sourceModifiedAt;
+
+    if (!shouldGenerate) continue;
+
+    const previewSeed = getTemplatePreviewSeed(template.id);
+    await generateImage({
+      templateId: template.id,
+      ...previewSeed,
+      outputFilename: previewFilename,
+      outputDir: templatePreviewDir,
+    });
+  }
+}
+
+function getTemplatePreviewUrl(req, templateId) {
+  const previewPath = path.join(templatePreviewDir, `${templateId}.webp`);
+  if (!fs.existsSync(previewPath)) return undefined;
+
+  const previewVersion = fs.statSync(previewPath).mtimeMs;
+  const baseUrl = config.baseUrl || `${req.protocol}://${req.get("host")}`;
+  return `${baseUrl}/images/template-previews/${templateId}.webp?v=${previewVersion}`;
+}
+
+app.get("/api/templates", async (req, res) => {
   try {
-    const templates = getTemplateList();
+    await ensureTemplatePreviews();
+    const templates = getTemplateList().map((template) => ({
+      ...template,
+      previewImageUrl: getTemplatePreviewUrl(req, template.id),
+    }));
     res.json({ success: true, templates });
   } catch (error) {
     console.error("Error fetching templates:", error);
@@ -135,6 +184,8 @@ app.post("/api/generate-image", async (req, res) => {
       mainText,
       bgImageUrl,
       bgImageBase64,
+      avatarImageBase64,
+      avatarIcon,
       bannerColor,
       bannerOpacity,
       categoryColor,
@@ -151,6 +202,8 @@ app.post("/api/generate-image", async (req, res) => {
       mainText,
       bgImageUrl,
       bgImageBase64,
+      avatarImageBase64,
+      avatarIcon,
       bannerColor,
       bannerOpacity:
         bannerOpacity !== undefined ? parseFloat(bannerOpacity) : undefined,
@@ -249,6 +302,7 @@ function cleanupOldImages() {
       if (file === ".gitkeep") continue;
       const filePath = path.join(generatedDir, file);
       const stats = fs.statSync(filePath);
+      if (stats.isDirectory()) continue;
       if (now - stats.mtimeMs > MAX_AGE) {
         fs.unlinkSync(filePath);
         deletedCount++;

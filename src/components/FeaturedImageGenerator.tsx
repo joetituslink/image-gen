@@ -4,7 +4,20 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Download, Image, Loader2, Upload, Check, Palette } from "lucide-react";
+import {
+  Camera,
+  Check,
+  Download,
+  Heart,
+  Image,
+  Loader2,
+  MessageCircle,
+  Palette,
+  Sparkles,
+  Upload,
+  User,
+  type LucideIcon,
+} from "lucide-react";
 import { toast } from "sonner";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
@@ -12,6 +25,47 @@ const APP_NAME = import.meta.env.VITE_APP_NAME || "Featured Image Generator";
 const APP_DESCRIPTION =
   import.meta.env.VITE_APP_DESCRIPTION ||
   "Create stunning blog featured images with custom text overlays";
+const SOCIAL_TEMPLATE_ID = "socialMessage";
+
+interface AvatarOption {
+  id: string;
+  label: string;
+  Icon: LucideIcon;
+  previewColor: string;
+}
+
+const AVATAR_OPTIONS: AvatarOption[] = [
+  {
+    id: "user",
+    label: "Profile",
+    Icon: User,
+    previewColor: "#2563eb",
+  },
+  {
+    id: "messageCircle",
+    label: "Chat",
+    Icon: MessageCircle,
+    previewColor: "#7c3aed",
+  },
+  {
+    id: "heart",
+    label: "Heart",
+    Icon: Heart,
+    previewColor: "#ec4899",
+  },
+  {
+    id: "sparkles",
+    label: "Glow",
+    Icon: Sparkles,
+    previewColor: "#f59e0b",
+  },
+  {
+    id: "camera",
+    label: "Camera",
+    Icon: Camera,
+    previewColor: "#0f766e",
+  },
+];
 
 interface TemplatePreview {
   bgGradient: string[];
@@ -23,6 +77,7 @@ interface Template {
   name: string;
   description: string;
   preview: TemplatePreview;
+  previewImageUrl?: string;
 }
 
 const FeaturedImageGenerator = () => {
@@ -35,6 +90,8 @@ const FeaturedImageGenerator = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const [bgImage, setBgImage] = useState<string | null>(null);
+  const [avatarImage, setAvatarImage] = useState<string | null>(null);
+  const [selectedAvatarIcon, setSelectedAvatarIcon] = useState<string>("user");
   const [bannerColor, setBannerColor] = useState<string>("");
   const [bannerOpacity, setBannerOpacity] = useState<number | undefined>(
     undefined
@@ -43,6 +100,35 @@ const FeaturedImageGenerator = () => {
   const [titleColor, setTitleColor] = useState<string>("");
   const [showColorOverrides, setShowColorOverrides] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const isSocialTemplate = selectedTemplate === SOCIAL_TEMPLATE_ID;
+  const selectedAvatarOption =
+    AVATAR_OPTIONS.find((option) => option.id === selectedAvatarIcon) ||
+    AVATAR_OPTIONS[0];
+  const SelectedAvatarIcon = selectedAvatarOption.Icon;
+  const categoryLabel = isSocialTemplate
+    ? "Profile Name / Handle"
+    : "Category / Subtitle";
+  const categoryPlaceholder = isSocialTemplate
+    ? "Enter a profile name or @handle"
+    : "Enter category text (e.g., HEALTH AND WELLNESS)";
+  const titleLabel = isSocialTemplate ? "Message Text" : "Main Title";
+  const titlePlaceholder = isSocialTemplate
+    ? "Write the social message you want to feature..."
+    : "Enter your main blog title...";
+  const resetColorOverrides = useCallback(() => {
+    setBannerColor("");
+    setBannerOpacity(undefined);
+    setCategoryColor("");
+    setTitleColor("");
+  }, []);
+  const selectTemplate = useCallback(
+    (templateId: string) => {
+      setSelectedTemplate(templateId);
+      resetColorOverrides();
+    },
+    [resetColorOverrides]
+  );
 
   // Fetch templates on mount
   useEffect(() => {
@@ -111,6 +197,28 @@ const FeaturedImageGenerator = () => {
     []
   );
 
+  const handleAvatarUpload = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          setAvatarImage(event.target?.result as string);
+          toast.success("Avatar uploaded!");
+        };
+        reader.readAsDataURL(file);
+      }
+    },
+    []
+  );
+
+  const clearAvatarImage = useCallback(() => {
+    setAvatarImage(null);
+    if (avatarInputRef.current) {
+      avatarInputRef.current.value = "";
+    }
+  }, []);
+
   const generateImage = useCallback(async () => {
     if (!mainText.trim()) {
       toast.error("Please enter a main title");
@@ -126,6 +234,9 @@ const FeaturedImageGenerator = () => {
         mainText,
         bgImageBase64: bgImage,
       };
+
+      if (avatarImage) body.avatarImageBase64 = avatarImage;
+      if (selectedAvatarIcon) body.avatarIcon = selectedAvatarIcon;
 
       // Only include color overrides if they're set
       if (bannerColor) body.bannerColor = bannerColor;
@@ -170,6 +281,8 @@ const FeaturedImageGenerator = () => {
     mainText,
     categoryText,
     bgImage,
+    avatarImage,
+    selectedAvatarIcon,
     selectedTemplate,
     bannerColor,
     bannerOpacity,
@@ -198,13 +311,6 @@ const FeaturedImageGenerator = () => {
     }
   }, [generatedImage]);
 
-  const resetColorOverrides = () => {
-    setBannerColor("");
-    setBannerOpacity(undefined);
-    setCategoryColor("");
-    setTitleColor("");
-  };
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-6 md:p-12">
       <div className="mx-auto max-w-6xl space-y-8">
@@ -217,17 +323,41 @@ const FeaturedImageGenerator = () => {
 
         {/* Template Selector */}
         <div className="space-y-4">
-          <Label className="text-lg font-semibold text-white">
-            Choose a Template
-          </Label>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+          <div className="flex items-center justify-between gap-3">
+            <Label className="text-lg font-semibold text-white">
+              Choose a Template
+            </Label>
+            <span className="text-sm text-slate-400">
+              {templates.find((template) => template.id === selectedTemplate)?.name ||
+                "Select"}
+            </span>
+          </div>
+
+          <div className="overflow-x-auto pb-1">
+            <div className="flex min-w-max gap-2">
+              {templates.map((template) => (
+                <button
+                  key={`compact-${template.id}`}
+                  type="button"
+                  onClick={() => selectTemplate(template.id)}
+                  className={`rounded-full border px-4 py-2 text-sm font-medium whitespace-nowrap transition ${
+                    selectedTemplate === template.id
+                      ? "border-white bg-white text-slate-900 shadow-lg shadow-white/10"
+                      : "border-slate-600 bg-slate-900/60 text-slate-300 hover:border-slate-400 hover:text-white"
+                  }`}
+                >
+                  {template.name}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
             {templates.map((template) => (
               <button
                 key={template.id}
-                onClick={() => {
-                  setSelectedTemplate(template.id);
-                  resetColorOverrides();
-                }}
+                type="button"
+                onClick={() => selectTemplate(template.id)}
                 className={`group relative overflow-hidden rounded-xl border-2 transition-all duration-300 ${
                   selectedTemplate === template.id
                     ? "border-white shadow-lg shadow-white/20 scale-105"
@@ -236,45 +366,76 @@ const FeaturedImageGenerator = () => {
               >
                 {/* Template Preview */}
                 <div
-                  className="aspect-video w-full relative"
-                  style={{
-                    background: `linear-gradient(135deg, ${template.preview.bgGradient[0]}, ${template.preview.bgGradient[1] || template.preview.bgGradient[0]})`,
-                  }}
-                >
-                  {/* Simulated content preview */}
-                  <div className="absolute inset-0 flex items-center justify-center p-3">
-                    <div
-                      className={`w-full rounded-md p-2 ${
-                        template.id === "modernDark"
-                          ? "bg-white/5 border border-white/10"
-                          : template.id === "minimal"
-                            ? "bg-transparent"
-                            : template.id === "editorial"
-                              ? "bg-transparent"
-                              : "bg-white/80"
-                      }`}
-                    >
-                      <div
-                        className="h-1 w-8 rounded mb-1 mx-auto"
-                        style={{
-                          backgroundColor: template.preview.accentColor,
-                        }}
+                  className="aspect-video w-full relative">
+                  <div className="absolute inset-0">
+                    {template.previewImageUrl ? (
+                      <img
+                        src={template.previewImageUrl}
+                        alt={`${template.name} preview`}
+                        className="h-full w-full rounded-tl rounded-tr object-cover"
+                        loading="lazy"
                       />
-                      <div
-                        className={`h-2 w-16 rounded mx-auto ${
-                          template.id === "modernDark"
-                            ? "bg-white/80"
-                            : "bg-slate-800/60"
-                        }`}
-                      />
-                      <div
-                        className={`h-1.5 w-12 rounded mx-auto mt-1 ${
-                          template.id === "modernDark"
-                            ? "bg-white/60"
-                            : "bg-slate-800/40"
-                        }`}
-                      />
-                    </div>
+                    ) : template.id === SOCIAL_TEMPLATE_ID ? (
+                      <div className="flex h-full flex-col rounded-2xl bg-white/95 p-3 shadow-lg shadow-slate-900/20">
+                        <div className="flex items-center gap-2">
+                          <div
+                            className="flex h-8 w-8 items-center justify-center rounded-full"
+                            style={{ backgroundColor: template.preview.accentColor }}
+                          >
+                            <User className="h-4 w-4 text-white" />
+                          </div>
+                          <div className="space-y-1">
+                            <div className="h-2 w-16 rounded-full bg-slate-900/80" />
+                            <div className="h-1.5 w-10 rounded-full bg-slate-400/70" />
+                          </div>
+                        </div>
+                        <div className="mt-4 space-y-2">
+                          <div className="h-2 w-full rounded-full bg-slate-900/75" />
+                          <div className="h-2 w-5/6 rounded-full bg-slate-800/55" />
+                          <div className="h-2 w-2/3 rounded-full bg-slate-800/45" />
+                        </div>
+                        <div className="mt-auto flex gap-2">
+                          <div className="h-1.5 flex-1 rounded-full bg-slate-300/90" />
+                          <div className="h-1.5 w-10 rounded-full bg-slate-300/75" />
+                          <div className="h-1.5 w-8 rounded-full bg-slate-300/75" />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex h-full items-center justify-center">
+                        <div
+                          className={`w-full rounded-md p-2 ${
+                            template.id === "modernDark"
+                              ? "bg-white/5 border border-white/10"
+                              : template.id === "minimal"
+                                ? "bg-transparent"
+                                : template.id === "editorial"
+                                  ? "bg-transparent"
+                                  : "bg-white/80"
+                          }`}
+                        >
+                          <div
+                            className="h-1 w-8 rounded mb-1 mx-auto"
+                            style={{
+                              backgroundColor: template.preview.accentColor,
+                            }}
+                          />
+                          <div
+                            className={`h-2 w-16 rounded mx-auto ${
+                              template.id === "modernDark"
+                                ? "bg-white/80"
+                                : "bg-slate-800/60"
+                            }`}
+                          />
+                          <div
+                            className={`h-1.5 w-12 rounded mx-auto mt-1 ${
+                              template.id === "modernDark"
+                                ? "bg-white/60"
+                                : "bg-slate-800/40"
+                            }`}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Selected indicator */}
@@ -310,9 +471,9 @@ const FeaturedImageGenerator = () => {
             <CardContent className="space-y-4">
               {/* Category Text Input */}
               <div className="space-y-2">
-                <Label className="text-slate-300">Category / Subtitle</Label>
+                <Label className="text-slate-300">{categoryLabel}</Label>
                 <Textarea
-                  placeholder="Enter category text (e.g., HEALTH AND WELLNESS)"
+                  placeholder={categoryPlaceholder}
                   value={categoryText}
                   onChange={(e) => setCategoryText(e.target.value)}
                   className="min-h-[60px] resize-none bg-slate-900/50 border-slate-600 text-white placeholder:text-slate-500"
@@ -321,14 +482,98 @@ const FeaturedImageGenerator = () => {
 
               {/* Main Title Input */}
               <div className="space-y-2">
-                <Label className="text-slate-300">Main Title</Label>
+                <Label className="text-slate-300">{titleLabel}</Label>
                 <Textarea
-                  placeholder="Enter your main blog title..."
+                  placeholder={titlePlaceholder}
                   value={mainText}
                   onChange={(e) => setMainText(e.target.value)}
                   className="min-h-[80px] resize-none bg-slate-900/50 border-slate-600 text-white placeholder:text-slate-500"
                 />
               </div>
+
+              {isSocialTemplate && (
+                <div className="space-y-3 rounded-xl border border-slate-700 bg-slate-900/40 p-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <Label className="text-slate-300">Avatar</Label>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Choose a built-in icon or upload a profile image for the
+                        social card.
+                      </p>
+                    </div>
+                    <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-full border border-slate-600 bg-slate-800">
+                      {avatarImage ? (
+                        <img
+                          src={avatarImage}
+                          alt="Avatar preview"
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div
+                          className="flex h-full w-full items-center justify-center"
+                          style={{
+                            backgroundColor: selectedAvatarOption.previewColor,
+                          }}
+                        >
+                          <SelectedAvatarIcon className="h-6 w-6 text-white" />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+                    {AVATAR_OPTIONS.map((option) => (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => setSelectedAvatarIcon(option.id)}
+                        className={`rounded-xl border px-3 py-3 transition ${
+                          selectedAvatarIcon === option.id
+                            ? "border-white bg-slate-800 text-white"
+                            : "border-slate-700 bg-slate-900/60 text-slate-400 hover:border-slate-500 hover:text-white"
+                        }`}
+                      >
+                        <div
+                          className="mx-auto mb-2 flex h-9 w-9 items-center justify-center rounded-full"
+                          style={{ backgroundColor: option.previewColor }}
+                        >
+                          <option.Icon className="h-4 w-4 text-white" />
+                        </div>
+                        <span className="text-xs font-medium">{option.label}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex gap-2">
+                    <input
+                      type="file"
+                      ref={avatarInputRef}
+                      onChange={handleAvatarUpload}
+                      accept="image/*"
+                      className="hidden"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => avatarInputRef.current?.click()}
+                      className="flex-1 border-slate-600 bg-slate-900/50 text-slate-300 hover:bg-slate-700 hover:text-white"
+                    >
+                      <Upload className="mr-2 h-4 w-4" />
+                      {avatarImage ? "Change Avatar" : "Upload Avatar"}
+                    </Button>
+                    {avatarImage && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={clearAvatarImage}
+                        className="text-slate-400 hover:text-white"
+                      >
+                        Use Icon
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Background Image Upload */}
               <div className="space-y-2">

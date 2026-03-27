@@ -5,9 +5,10 @@
   "description": "Generate stunning featured images with custom templates and text overlays",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently \"npm run dev:web\" \"npm run dev:api\"",
+    "dev:web": "vite",
     "dev:api": "node app.js",
-    "dev:all": "concurrently \"npm run dev\" \"npm run dev:api\"",
+    "dev:all": "npm run dev",
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "start": "node app.js",

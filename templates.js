@@ -343,7 +343,106 @@ export const templates = {
     },
   },
 
-  // Template 6: Prayer Cover - Classic style with prayer background image
+  // Template 6: Social Message - Social post card with avatar support
+  socialMessage: {
+    id: "socialMessage",
+    name: "Social Message",
+    description: "Polished social card layout with avatar and message styling",
+    preview: {
+      bgGradient: ["#0f172a", "#3b82f6"],
+      accentColor: "#2563eb",
+    },
+    config: {
+      canvas: { width: 1200, height: 630 },
+      background: {
+        type: "gradient",
+        gradient: {
+          type: "linear",
+          angle: 140,
+          stops: [
+            { offset: 0, color: "#0f172a" },
+            { offset: 0.55, color: "#1d4ed8" },
+            { offset: 1, color: "#60a5fa" },
+          ],
+        },
+      },
+      decorations: [
+        {
+          type: "circle",
+          x: 1020,
+          y: 100,
+          radius: 180,
+          color: "rgba(255, 255, 255, 0.1)",
+        },
+        {
+          type: "circle",
+          x: 140,
+          y: 530,
+          radius: 150,
+          color: "rgba(255, 255, 255, 0.08)",
+        },
+      ],
+      banner: {
+        type: "floating",
+        x: 90,
+        y: 75,
+        width: 1020,
+        height: 480,
+        defaultColor: "#ffffff",
+        defaultOpacity: 0.97,
+        borderRadius: 36,
+        shadow: {
+          blur: 60,
+          color: "rgba(15, 23, 42, 0.28)",
+          offsetY: 24,
+        },
+      },
+      avatar: {
+        x: 150,
+        y: 140,
+        size: 110,
+        defaultPreset: "user",
+        backgroundColor: "#2563eb",
+        iconColor: "#ffffff",
+        borderColor: "#ffffff",
+        borderWidth: 8,
+        shadow: {
+          color: "rgba(15, 23, 42, 0.18)",
+          blur: 24,
+          offsetY: 12,
+        },
+      },
+      category: {
+        font: "700 30px Arial, sans-serif",
+        defaultColor: "#0f172a",
+        x: 300,
+        y: 190,
+        align: "left",
+      },
+      title: {
+        font: "400 56px Arial, sans-serif",
+        defaultColor: "#1e293b",
+        lineHeight: 66,
+        x: 150,
+        y: 320,
+        align: "left",
+        maxWidth: 860,
+        maxLines: 4,
+        minScale: 0.42,
+      },
+      subtitle: {
+        enabled: true,
+        font: "500 20px Arial, sans-serif",
+        color: "#64748b",
+        x: 150,
+        y: 485,
+        align: "left",
+        text: "Reply  •  Share  •  Save",
+      },
+    },
+  },
+
+  // Template 7: Prayer Cover - Classic style with prayer background image
   prayerCover: {
     id: "prayerCover",
     name: "Prayer Cover",
@@ -384,8 +483,49 @@ export const templates = {
   },
 };
 
+const templatePreviewSeeds = {
+  classic: {
+    categoryText: "HEALTH AND WELLNESS",
+    mainText: "How to Have a Better Work-Life Balance",
+  },
+  modernDark: {
+    categoryText: "TREND REPORT",
+    mainText: "What Creators Need to Know Before the Next Big Shift",
+  },
+  minimal: {
+    categoryText: "QUIET LUXURY",
+    mainText: "Simple design choices that still feel premium",
+  },
+  vibrant: {
+    categoryText: "CREATIVE SYSTEMS",
+    mainText: "Build a content engine that feels bright and human",
+  },
+  editorial: {
+    categoryText: "FEATURED STORY",
+    mainText: "The subtle details that make a layout feel intentional",
+  },
+  socialMessage: {
+    categoryText: "@dailygrace",
+    mainText: "Small reminders can reset the whole tone of your day.",
+    avatarIcon: "sparkles",
+  },
+  prayerCover: {
+    categoryText: "MORNING PRAYER",
+    mainText: "A quiet start can carry peace through the whole day",
+  },
+};
+
 export const getTemplate = (templateId) => {
   return templates[templateId] || templates.classic;
+};
+
+export const getTemplatePreviewSeed = (templateId) => {
+  return (
+    templatePreviewSeeds[templateId] || {
+      categoryText: "FEATURED",
+      mainText: "Create a polished image in seconds",
+    }
+  );
 };
 
 export const getTemplateList = () => {
