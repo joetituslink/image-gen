@@ -142,6 +142,8 @@ function normalizeGeneratePayload(body) {
     body.backgroundImageOffsetY !== undefined && body.backgroundImageOffsetY !== null
       ? parsePositiveNumber(body.backgroundImageOffsetY)
       : 0;
+  const flipBackgroundPosition =
+    body.flipBackgroundPosition === true || body.flipBackgroundPosition === "true";
   const iconSource =
     body.iconSource === "lucide" || body.iconSource === "image"
       ? body.iconSource
@@ -263,6 +265,7 @@ function normalizeGeneratePayload(body) {
     mainTextColor,
     mainTextFontFamily,
     mainTextFontSize,
+    flipBackgroundPosition,
   };
 }
 

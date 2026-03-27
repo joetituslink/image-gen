@@ -36,6 +36,7 @@ interface TemplateDefaults {
   backgroundColor: string;
   backgroundGradientCss: string;
   backgroundType: BackgroundType;
+  flipBackgroundPosition?: boolean;
   iconBackgroundColor: string;
   iconColor: string;
   iconName: string;
@@ -228,6 +229,7 @@ const FeaturedImageGenerator = () => {
   const [backgroundImageZoom, setBackgroundImageZoom] = useState(1);
   const [backgroundImageOffsetX, setBackgroundImageOffsetX] = useState(0);
   const [backgroundImageOffsetY, setBackgroundImageOffsetY] = useState(0);
+  const [flipBackgroundPosition, setFlipBackgroundPosition] = useState(false);
   const [iconSource, setIconSource] = useState<IconSource>("none");
   const [iconName, setIconName] = useState("sparkles");
   const [iconImage, setIconImage] = useState<string | null>(null);
@@ -287,6 +289,7 @@ const FeaturedImageGenerator = () => {
     setBackgroundImageZoom(1);
     setBackgroundImageOffsetX(0);
     setBackgroundImageOffsetY(0);
+    setFlipBackgroundPosition(Boolean(template.defaults.flipBackgroundPosition));
     if (backgroundInputRef.current) backgroundInputRef.current.value = "";
     setIconSource(template.defaults.iconSource);
     setIconName(template.defaults.iconName);
@@ -515,6 +518,7 @@ const FeaturedImageGenerator = () => {
         body.backgroundImageZoom = backgroundImageZoom;
         body.backgroundImageOffsetX = backgroundImageOffsetX;
         body.backgroundImageOffsetY = backgroundImageOffsetY;
+        body.flipBackgroundPosition = flipBackgroundPosition;
       }
 
       if (iconSource === "lucide") {
@@ -555,6 +559,7 @@ const FeaturedImageGenerator = () => {
     backgroundImageOffsetX,
     backgroundImageOffsetY,
     backgroundImageZoom,
+    flipBackgroundPosition,
     backgroundType,
     iconBackgroundColor,
     iconColor,
@@ -854,6 +859,39 @@ const FeaturedImageGenerator = () => {
                           decoding="async"
                         />
                         <div className="space-y-3 rounded-xl border border-slate-700 bg-slate-950/50 p-3">
+                          {selectedTemplate === "angledFrame" && (
+                            <label className="flex items-center justify-between gap-4 rounded-xl border border-slate-700 bg-slate-900/70 px-3 py-3">
+                              <div>
+                                <div className="text-sm font-medium text-white">
+                                  Flip Background Position
+                                </div>
+                                <div className="mt-1 text-xs text-slate-500">
+                                  Move the image to the left and the angled design to the right.
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                role="switch"
+                                aria-checked={flipBackgroundPosition}
+                                onClick={() =>
+                                  setFlipBackgroundPosition((currentValue) => !currentValue)
+                                }
+                                className={`relative inline-flex h-7 w-12 items-center rounded-full border transition-colors ${
+                                  flipBackgroundPosition
+                                    ? "border-white bg-white"
+                                    : "border-slate-600 bg-slate-800"
+                                }`}
+                              >
+                                <span
+                                  className={`inline-block h-5 w-5 rounded-full transition-transform ${
+                                    flipBackgroundPosition
+                                      ? "translate-x-6 bg-slate-900"
+                                      : "translate-x-1 bg-white"
+                                  }`}
+                                />
+                              </button>
+                            </label>
+                          )}
                           <div className="space-y-2">
                             <div className="flex items-center justify-between gap-3 text-xs text-slate-400">
                               <Label className="text-xs text-slate-400">

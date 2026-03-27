@@ -684,6 +684,101 @@ function drawSubtitle(ctx, subtitleConfig) {
   ctx.fillText(subtitleConfig.text, subtitleConfig.x, subtitleConfig.y);
 }
 
+function mirrorAlign(align) {
+  if (align === "left") return "right";
+  if (align === "right") return "left";
+  return align;
+}
+
+function mirrorRectX(rect, canvasWidth) {
+  if (!rect || rect.x === undefined || rect.width === undefined) return rect;
+  return {
+    ...rect,
+    x: canvasWidth - rect.x - rect.width,
+  };
+}
+
+function mirrorLine(decoration, canvasWidth) {
+  return {
+    ...decoration,
+    x1: canvasWidth - decoration.x1,
+    x2: canvasWidth - decoration.x2,
+  };
+}
+
+function mirrorPolygon(decoration, canvasWidth) {
+  return {
+    ...decoration,
+    points: decoration.points.map((point) => ({
+      ...point,
+      x: canvasWidth - point.x,
+    })),
+  };
+}
+
+function mirrorTextConfig(textConfig, canvasWidth) {
+  if (!textConfig || textConfig.x === undefined) return textConfig;
+  return {
+    ...textConfig,
+    x: canvasWidth - textConfig.x,
+    align: mirrorAlign(textConfig.align || "center"),
+  };
+}
+
+function mirrorIconConfig(iconConfig, canvasWidth) {
+  if (!iconConfig) return iconConfig;
+  return {
+    ...iconConfig,
+    x: canvasWidth - iconConfig.x - iconConfig.size,
+  };
+}
+
+function mirrorPlacement(placement, canvasWidth) {
+  if (!placement) return placement;
+  return {
+    ...placement,
+    x: canvasWidth - placement.x - placement.width,
+    alignX:
+      placement.alignX === "left"
+        ? "right"
+        : placement.alignX === "right"
+          ? "left"
+          : placement.alignX,
+  };
+}
+
+function resolveRenderConfig(template, flipBackgroundPosition) {
+  const baseConfig = template.config;
+  if (template.id !== "angledFrame" || !flipBackgroundPosition) {
+    return baseConfig;
+  }
+
+  const canvasWidth = baseConfig.canvas.width;
+
+  return {
+    ...baseConfig,
+    backgroundImagePlacement: mirrorPlacement(
+      baseConfig.backgroundImagePlacement,
+      canvasWidth
+    ),
+    icon: mirrorIconConfig(baseConfig.icon, canvasWidth),
+    nameField: mirrorTextConfig(baseConfig.nameField, canvasWidth),
+    mainTextField: mirrorTextConfig(baseConfig.mainTextField, canvasWidth),
+    decorations: baseConfig.decorations.map((decoration) => {
+      if (decoration.type === "rect") {
+        return mirrorRectX(decoration, canvasWidth);
+      }
+      if (decoration.type === "line") {
+        return mirrorLine(decoration, canvasWidth);
+      }
+      if (decoration.type === "polygon") {
+        return mirrorPolygon(decoration, canvasWidth);
+      }
+      return decoration;
+    }),
+  };
+}
+
 export async function generateImage({
   templateId = "classic",
   name,
@@ -700,11 +795,12 @@ export async function generateImage({
   mainTextColor,
   mainTextFontFamily,
   mainTextFontSize,
+  flipBackgroundPosition = false,
   outputFilename,
   outputDir,
 }) {
   const template = getTemplate(templateId);
-  const config = template.config;
+  const config = resolveRenderConfig(template, flipBackgroundPosition);
   const canvas = createCanvas(config.canvas.width, config.canvas.height);
   const ctx = canvas.getContext("2d");
 

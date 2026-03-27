@@ -35,6 +35,7 @@ function makeTemplate({
     supportsIcon: true,
     defaults: {
       ...defaults,
+      flipBackgroundPosition: defaults.flipBackgroundPosition || false,
       mainTextFontFamily:
         defaults.mainTextFontFamily || fontDefaults.mainTextFontFamily,
       mainTextFontSize:
@@ -47,6 +48,7 @@ function makeTemplate({
         previewSeed.mainTextFontFamily || fontDefaults.mainTextFontFamily,
       mainTextFontSize:
         previewSeed.mainTextFontSize || fontDefaults.mainTextFontSize,
+      flipBackgroundPosition: previewSeed.flipBackgroundPosition || false,
     },
   };
 }
@@ -474,6 +476,7 @@ export const templates = {
       iconName: "megaphone",
       iconColor: "#ffffff",
       iconBackgroundColor: "#2f3f93",
+      flipBackgroundPosition: false,
     },
     previewSeed: {
       name: "MARKETING INSIGHT",
@@ -488,6 +491,7 @@ export const templates = {
       iconName: "megaphone",
       iconColor: "#ffffff",
       iconBackgroundColor: "#2f3f93",
+      flipBackgroundPosition: false,
     },
     config: {
       canvas: { width: 1200, height: 630 },
@@ -593,7 +597,7 @@ export const templates = {
         x: 88,
         y: 220,
         align: "left",
-        maxWidth: 455,
+        maxWidth: 520,
         maxLines: 4,
         minScale: 0.5,
       },
