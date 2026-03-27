@@ -4,64 +4,57 @@ import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
 import { generateImage } from "./generateImage.js";
-import { getTemplateList, getTemplatePreviewSeed } from "./templates.js";
+import { curatedLucideIconNameSet } from "./shared/iconCatalog.js";
+import { mainTextFontFamilies } from "./shared/fontCatalog.js";
+import { getTemplate, getTemplateList, getTemplatePreviewSeed } from "./templates.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// ============================================
-// ENVIRONMENT CHECK & LOADING
-// ============================================
 function loadEnv() {
   const envPath = path.join(__dirname, ".env");
-  if (fs.existsSync(envPath)) {
-    try {
-      const envContent = fs.readFileSync(envPath, "utf-8");
-      envContent.split("\n").forEach((line) => {
-        const match = line.match(/^\s*([\w.-]+)\s*=\s*(.*)?\s*$/);
-        if (match) {
-          const key = match[1];
-          let value = (match[2] || "").trim();
-          if (value.startsWith('"') && value.endsWith('"')) {
-            value = value.substring(1, value.length - 1);
-          } else if (value.startsWith("'") && value.endsWith("'")) {
-            value = value.substring(1, value.length - 1);
-          }
-          process.env[key] = value;
-        }
-      });
-      console.log("✅ Environment variables loaded from .env");
-      return true;
-    } catch (err) {
-      console.error("❌ Error reading .env file:", err.message);
-    }
+  if (!fs.existsSync(envPath)) return false;
+
+  try {
+    const envContent = fs.readFileSync(envPath, "utf-8");
+    envContent.split("\n").forEach((line) => {
+      const match = line.match(/^\s*([\w.-]+)\s*=\s*(.*)?\s*$/);
+      if (!match) return;
+
+      const key = match[1];
+      let value = (match[2] || "").trim();
+      if (value.startsWith('"') && value.endsWith('"')) {
+        value = value.slice(1, -1);
+      } else if (value.startsWith("'") && value.endsWith("'")) {
+        value = value.slice(1, -1);
+      }
+      process.env[key] = value;
+    });
+    console.log("✅ Environment variables loaded from .env");
+    return true;
+  } catch (error) {
+    console.error("❌ Error reading .env file:", error.message);
+    return false;
   }
-  return false;
 }
 
 const envLoaded = loadEnv();
-
 if (process.env.NODE_ENV === "production" && !envLoaded) {
   const envPath = path.join(__dirname, ".env");
   console.error(`\n❌ FATAL ERROR: .env file not found at ${envPath}`);
-  console.error(
-    "In production, the application requires a .env file for configuration."
-  );
   process.exit(1);
 }
 
 const app = express();
-
 const config = {
   appName: process.env.APP_NAME || "Image Gen App",
-  // Use process.env.PORT directly (don't parseInt as it might be a socket path)
   port: process.env.PORT || 3001,
   baseUrl: process.env.BASE_URL || "",
   corsOrigins: process.env.CORS_ORIGINS || "*",
   cleanup: {
     enabled: process.env.CLEANUP_ENABLED !== "false",
-    intervalMinutes: parseInt(process.env.CLEANUP_INTERVAL_MINUTES) || 5,
-    maxAgeMinutes: parseInt(process.env.CLEANUP_MAX_AGE_MINUTES) || 30,
+    intervalMinutes: parseInt(process.env.CLEANUP_INTERVAL_MINUTES, 10) || 5,
+    maxAgeMinutes: parseInt(process.env.CLEANUP_MAX_AGE_MINUTES, 10) || 30,
   },
   maxRequestSize: process.env.MAX_REQUEST_SIZE || "10mb",
 };
@@ -74,55 +67,205 @@ const tmpDir = path.join(__dirname, "tmp");
 const previewSourceFiles = [
   path.join(__dirname, "templates.js"),
   path.join(__dirname, "generateImage.js"),
+  path.join(__dirname, "shared", "iconCatalog.js"),
+  path.join(__dirname, "shared", "fontCatalog.js"),
 ];
 
-try {
-  if (!fs.existsSync(generatedDir)) {
-    fs.mkdirSync(generatedDir, { recursive: true });
-    console.log("✅ Created generated images directory");
+for (const directory of [generatedDir, templatePreviewDir, tmpDir]) {
+  if (!fs.existsSync(directory)) {
+    fs.mkdirSync(directory, { recursive: true });
   }
-  if (!fs.existsSync(templatePreviewDir)) {
-    fs.mkdirSync(templatePreviewDir, { recursive: true });
-    console.log("✅ Created template preview directory");
-  }
-  // Ensure tmp directory exists for Passenger restart
-  if (!fs.existsSync(tmpDir)) {
-    fs.mkdirSync(tmpDir, { recursive: true });
-    console.log("✅ Created tmp directory");
-  }
-} catch (err) {
-  console.error("❌ ERROR creating directories:", err.message);
 }
 
-// ============================================
-// MIDDLEWARE
-// ============================================
-const corsOptions = {
-  origin:
-    config.corsOrigins === "*"
-      ? "*"
-      : config.corsOrigins.split(",").map((s) => s.trim()),
-  methods: ["GET", "POST", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-};
-app.use(cors(corsOptions));
-app.set("trust proxy", true);
-app.use(express.json({ limit: config.maxRequestSize }));
-app.use(express.urlencoded({ extended: true, limit: config.maxRequestSize }));
+function parseLinearGradientCss(input) {
+  const match = input.match(
+    /^linear-gradient\(\s*(-?\d+(?:\.\d+)?)deg\s*,\s*([^,]+?)\s+0%\s*,\s*([^,]+?)\s+100%\s*\)$/i
+  );
+  if (!match) return null;
 
-// Request Logger for debugging production issues
-app.use((req, res, next) => {
-  if (req.url.startsWith("/api/")) {
-    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  return {
+    angle: parseFloat(match[1]),
+    startColor: match[2].trim(),
+    endColor: match[3].trim(),
+  };
+}
+
+function isNonEmptyString(value) {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function validationError(message) {
+  const error = new Error(message);
+  error.statusCode = 400;
+  return error;
+}
+
+function parsePositiveNumber(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizeGeneratePayload(body) {
+  const template = getTemplate(body.templateId);
+  const name = typeof body.name === "string" ? body.name.trim() : "";
+  const mainText = typeof body.mainText === "string" ? body.mainText.trim() : "";
+  const backgroundType = body.backgroundType;
+  const surfaceColor = isNonEmptyString(body.surfaceColor)
+    ? body.surfaceColor.trim()
+    : template.defaults.surfaceColor;
+  const surfaceOpacity =
+    body.surfaceOpacity !== undefined && body.surfaceOpacity !== null
+      ? parseFloat(body.surfaceOpacity)
+      : template.defaults.surfaceOpacity;
+  const primaryColor = isNonEmptyString(body.primaryColor)
+    ? body.primaryColor.trim()
+    : template.defaults.primaryColor;
+  const mainTextColor = isNonEmptyString(body.mainTextColor)
+    ? body.mainTextColor.trim()
+    : template.defaults.mainTextColor;
+  const mainTextFontFamily = isNonEmptyString(body.mainTextFontFamily)
+    ? body.mainTextFontFamily.trim()
+    : template.defaults.mainTextFontFamily;
+  const mainTextFontSize =
+    body.mainTextFontSize !== undefined && body.mainTextFontSize !== null
+      ? parsePositiveNumber(body.mainTextFontSize)
+      : template.defaults.mainTextFontSize;
+  const backgroundImageZoom =
+    body.backgroundImageZoom !== undefined && body.backgroundImageZoom !== null
+      ? parsePositiveNumber(body.backgroundImageZoom)
+      : 1;
+  const backgroundImageOffsetX =
+    body.backgroundImageOffsetX !== undefined && body.backgroundImageOffsetX !== null
+      ? parsePositiveNumber(body.backgroundImageOffsetX)
+      : 0;
+  const backgroundImageOffsetY =
+    body.backgroundImageOffsetY !== undefined && body.backgroundImageOffsetY !== null
+      ? parsePositiveNumber(body.backgroundImageOffsetY)
+      : 0;
+  const iconSource =
+    body.iconSource === "lucide" || body.iconSource === "image"
+      ? body.iconSource
+      : "none";
+  const iconName = isNonEmptyString(body.iconName) ? body.iconName.trim() : "";
+  const iconImageBase64 = isNonEmptyString(body.iconImageBase64)
+    ? body.iconImageBase64.trim()
+    : "";
+  const iconColor = isNonEmptyString(body.iconColor)
+    ? body.iconColor.trim()
+    : template.defaults.iconColor;
+  const iconBackgroundColor = isNonEmptyString(body.iconBackgroundColor)
+    ? body.iconBackgroundColor.trim()
+    : primaryColor;
+
+  if (!name) throw validationError("Name is required");
+  if (name.length > 25) throw validationError("Name must be 25 characters or fewer");
+  if (!mainText) throw validationError("Main text is required");
+  if (mainText.length > 70) {
+    throw validationError("Main text must be 70 characters or fewer");
   }
-  next();
-});
+  if (!mainTextFontFamily) {
+    throw validationError("Main text font family is required");
+  }
+  if (!mainTextFontFamilies.has(mainTextFontFamily)) {
+    throw validationError("Selected main text font is not supported");
+  }
+  if (!Number.isFinite(mainTextFontSize) || mainTextFontSize < 24 || mainTextFontSize > 120) {
+    throw validationError("Main text font size must be between 24 and 120");
+  }
 
-app.use("/images", express.static(generatedDir));
+  if (!["color", "gradient", "image"].includes(backgroundType)) {
+    throw validationError("Background type must be color, gradient, or image");
+  }
+  if (!Number.isFinite(backgroundImageZoom) || backgroundImageZoom < 1 || backgroundImageZoom > 3) {
+    throw validationError("Background image zoom must be between 1 and 3");
+  }
+  if (
+    !Number.isFinite(backgroundImageOffsetX) ||
+    backgroundImageOffsetX < -100 ||
+    backgroundImageOffsetX > 100
+  ) {
+    throw validationError("Background image horizontal position must be between -100 and 100");
+  }
+  if (
+    !Number.isFinite(backgroundImageOffsetY) ||
+    backgroundImageOffsetY < -100 ||
+    backgroundImageOffsetY > 100
+  ) {
+    throw validationError("Background image vertical position must be between -100 and 100");
+  }
 
-// ============================================
-// API ROUTES (Before Frontend Static)
-// ============================================
+  let background;
+  if (backgroundType === "color") {
+    if (!isNonEmptyString(body.backgroundColor)) {
+      throw validationError("Background color is required for color backgrounds");
+    }
+    background = {
+      type: "color",
+      color: body.backgroundColor.trim(),
+    };
+  } else if (backgroundType === "gradient") {
+    if (!isNonEmptyString(body.backgroundGradientCss)) {
+      throw validationError(
+        "Gradient config is required for gradient backgrounds"
+      );
+    }
+    const parsedGradient = parseLinearGradientCss(body.backgroundGradientCss.trim());
+    if (!parsedGradient) {
+      throw validationError(
+        "Gradient config must use linear-gradient(<angle>deg, <color> 0%, <color> 100%)"
+      );
+    }
+    background = {
+      type: "gradient",
+      css: body.backgroundGradientCss.trim(),
+      gradient: parsedGradient,
+    };
+  } else {
+    if (!isNonEmptyString(body.backgroundImageBase64)) {
+      throw validationError("Background image is required for image backgrounds");
+    }
+    background = {
+      type: "image",
+      imageBase64: body.backgroundImageBase64.trim(),
+      zoom: backgroundImageZoom,
+      offsetX: backgroundImageOffsetX,
+      offsetY: backgroundImageOffsetY,
+    };
+  }
+
+  if (!Number.isFinite(surfaceOpacity) || surfaceOpacity < 0 || surfaceOpacity > 1) {
+    throw validationError("Surface opacity must be between 0 and 1");
+  }
+
+  if (iconSource === "lucide") {
+    if (!curatedLucideIconNameSet.has(iconName)) {
+      throw validationError("Selected icon is not supported");
+    }
+  }
+
+  if (iconSource === "image" && !iconImageBase64) {
+    throw validationError("Icon image is required when icon source is image");
+  }
+
+  return {
+    templateId: template.id,
+    name,
+    mainText,
+    background,
+    iconSource,
+    iconName,
+    iconImageBase64,
+    iconColor,
+    iconBackgroundColor,
+    surfaceColor,
+    surfaceOpacity,
+    primaryColor,
+    mainTextColor,
+    mainTextFontFamily,
+    mainTextFontSize,
+  };
+}
+
 async function ensureTemplatePreviews() {
   const templates = getTemplateList();
   const sourceModifiedAt = Math.max(
@@ -141,9 +284,12 @@ async function ensureTemplatePreviews() {
     if (!shouldGenerate) continue;
 
     const previewSeed = getTemplatePreviewSeed(template.id);
-    await generateImage({
+    const previewPayload = normalizeGeneratePayload({
       templateId: template.id,
       ...previewSeed,
+    });
+    await generateImage({
+      ...previewPayload,
       outputFilename: previewFilename,
       outputDir: templatePreviewDir,
     });
@@ -158,6 +304,28 @@ function getTemplatePreviewUrl(req, templateId) {
   const baseUrl = config.baseUrl || `${req.protocol}://${req.get("host")}`;
   return `${baseUrl}/images/template-previews/${templateId}.webp?v=${previewVersion}`;
 }
+
+app.use(
+  cors({
+    origin:
+      config.corsOrigins === "*"
+        ? "*"
+        : config.corsOrigins.split(",").map((value) => value.trim()),
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
+app.set("trust proxy", true);
+app.use(express.json({ limit: config.maxRequestSize }));
+app.use(express.urlencoded({ extended: true, limit: config.maxRequestSize }));
+app.use("/images", express.static(generatedDir));
+
+app.use((req, _res, next) => {
+  if (req.url.startsWith("/api/")) {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  }
+  next();
+});
 
 app.get("/api/templates", async (req, res) => {
   try {
@@ -178,78 +346,35 @@ app.get("/api/templates", async (req, res) => {
 
 app.post("/api/generate-image", async (req, res) => {
   try {
-    const {
-      templateId = "classic",
-      categoryText = "CATEGORY",
-      mainText,
-      bgImageUrl,
-      bgImageBase64,
-      avatarImageBase64,
-      avatarIcon,
-      bannerColor,
-      bannerOpacity,
-      categoryColor,
-      titleColor,
-    } = req.body;
-    if (!mainText || !mainText.trim())
-      return res
-        .status(400)
-        .json({ success: false, error: "Main title text is required" });
-
-    const result = await generateImage({
-      templateId,
-      categoryText,
-      mainText,
-      bgImageUrl,
-      bgImageBase64,
-      avatarImageBase64,
-      avatarIcon,
-      bannerColor,
-      bannerOpacity:
-        bannerOpacity !== undefined ? parseFloat(bannerOpacity) : undefined,
-      categoryColor,
-      titleColor,
+    const payload = normalizeGeneratePayload(req.body);
+    const result = await generateImage(payload);
+    const baseUrl = config.baseUrl || `${req.protocol}://${req.get("host")}`;
+    res.json({
+      success: true,
+      downloadUrl: `${baseUrl}/images/${result.filename}`,
+      filename: result.filename,
     });
-
-    const protocol = req.protocol;
-    const host = req.get("host");
-    const downloadUrl = config.baseUrl
-      ? `${config.baseUrl}/images/${result.filename}`
-      : `${protocol}://${host}/images/${result.filename}`;
-
-    res.json({ success: true, downloadUrl, filename: result.filename });
   } catch (error) {
+    const statusCode = error.statusCode || 500;
     console.error("Error generating image:", error);
-    res.status(500).json({
+    res.status(statusCode).json({
       success: false,
       error: error.message || "Failed to generate image",
     });
   }
 });
 
-app.get("/api/health", (req, res) => {
+app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-// ============================================
-// FRONTEND SERVING
-// ============================================
-// In production, Vite builds index.html to root, but JS/CSS to /dist
-const possibleDistPaths = [
-  path.join(__dirname, "."), // Production: index.html in root
-  path.join(__dirname, "dist"), // Local/Fallback
-];
-
-let distPath = possibleDistPaths.find((p) =>
-  fs.existsSync(path.join(p, "index.html"))
+const possibleDistPaths = [path.join(__dirname, "."), path.join(__dirname, "dist")];
+const distPath = possibleDistPaths.find((targetPath) =>
+  fs.existsSync(path.join(targetPath, "index.html"))
 );
 
 if (distPath) {
-  const isRoot = distPath === path.join(__dirname, ".");
-  console.log(`Serving frontend from: ${isRoot ? "root" : "dist folder"}`);
-
-  if (isRoot) {
-    // 1. Serve compiled assets from the dist folder
+  if (distPath === path.join(__dirname, ".")) {
     app.use(
       "/dist",
       express.static(path.join(__dirname, "dist"), {
@@ -257,14 +382,9 @@ if (distPath) {
         maxAge: "1y",
       })
     );
-
-    // 2. Serve public assets from the assets folder
     app.use("/assets", express.static(path.join(__dirname, "assets")));
-
-    // 3. Serve specific root files
-    const rootFiles = ["favicon.ico", "robots.txt", "placeholder.svg"];
-    rootFiles.forEach((file) => {
-      app.get(`/${file}`, (req, res) => {
+    ["favicon.ico", "robots.txt", "placeholder.svg"].forEach((file) => {
+      app.get(`/${file}`, (_req, res) => {
         const filePath = path.join(__dirname, file);
         if (fs.existsSync(filePath)) res.sendFile(filePath);
         else res.status(404).end();
@@ -278,40 +398,32 @@ if (distPath) {
     if (req.url.startsWith("/api/")) return next();
     res.sendFile(path.join(distPath, "index.html"));
   });
-} else {
-  console.warn("⚠️  Frontend build not found. Run 'npm run build' first.");
 }
 
-// ============================================
-// START SERVER
-// ============================================
 app.listen(config.port, () => {
-  console.log(
-    `\n🖼️  ${config.appName} Running on http://localhost:${config.port}\n`
-  );
+  console.log(`\n🖼️  ${config.appName} Running on http://localhost:${config.port}\n`);
 });
 
 function cleanupOldImages() {
-  if (!config.cleanup.enabled) return;
-  try {
-    if (!fs.existsSync(generatedDir)) return;
-    const now = Date.now();
-    const files = fs.readdirSync(generatedDir);
-    let deletedCount = 0;
-    for (const file of files) {
-      if (file === ".gitkeep") continue;
-      const filePath = path.join(generatedDir, file);
-      const stats = fs.statSync(filePath);
-      if (stats.isDirectory()) continue;
-      if (now - stats.mtimeMs > MAX_AGE) {
-        fs.unlinkSync(filePath);
-        deletedCount++;
-      }
+  if (!config.cleanup.enabled || !fs.existsSync(generatedDir)) return;
+
+  const now = Date.now();
+  const files = fs.readdirSync(generatedDir);
+  let deletedCount = 0;
+
+  for (const file of files) {
+    if (file === ".gitkeep") continue;
+    const filePath = path.join(generatedDir, file);
+    const stats = fs.statSync(filePath);
+    if (stats.isDirectory()) continue;
+    if (now - stats.mtimeMs > MAX_AGE) {
+      fs.unlinkSync(filePath);
+      deletedCount += 1;
     }
-    if (deletedCount > 0)
-      console.log(`🧹 Cleaned up ${deletedCount} old image(s)`);
-  } catch (error) {
-    console.error("Error during cleanup:", error.message);
+  }
+
+  if (deletedCount > 0) {
+    console.log(`🧹 Cleaned up ${deletedCount} old image(s)`);
   }
 }
 

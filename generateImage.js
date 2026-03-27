@@ -1,70 +1,69 @@
-import { createCanvas, loadImage } from "@napi-rs/canvas";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import {
+  BadgeCheck,
+  Bolt,
+  BookOpen,
+  Camera,
+  Flame,
+  Globe,
+  Heart,
+  Leaf,
+  Megaphone,
+  MessageCircle,
+  MoonStar,
+  Music4,
+  Palette,
+  PenTool,
+  Sparkles,
+  Star,
+  Sun,
+  User,
+} from "lucide-react";
+import { createCanvas, GlobalFonts, loadImage } from "@napi-rs/canvas";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import https from "https";
-import http from "http";
+import { serverFontRegistrations } from "./shared/fontCatalog.js";
 import { getTemplate } from "./templates.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-// Ensure the generated images directory exists
 const generatedDir = path.join(__dirname, "generated");
+
 if (!fs.existsSync(generatedDir)) {
   fs.mkdirSync(generatedDir, { recursive: true });
 }
 
-/**
- * Fetch image from URL
- */
-async function fetchImageFromUrl(url) {
-  return new Promise((resolve, reject) => {
-    const protocol = url.startsWith("https") ? https : http;
+const curatedIconComponents = {
+  "badge-check": BadgeCheck,
+  bolt: Bolt,
+  "book-open": BookOpen,
+  camera: Camera,
+  flame: Flame,
+  globe: Globe,
+  heart: Heart,
+  leaf: Leaf,
+  megaphone: Megaphone,
+  "message-circle": MessageCircle,
+  "moon-star": MoonStar,
+  "music-4": Music4,
+  palette: Palette,
+  "pen-tool": PenTool,
+  sparkles: Sparkles,
+  star: Star,
+  sun: Sun,
+  user: User,
+};
+const lucideSvgDataUriCache = new Map();
 
-    const options = {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-      },
-    };
-
-    protocol
-      .get(url, options, (response) => {
-        // Handle redirects
-        if (
-          response.statusCode >= 300 &&
-          response.statusCode < 400 &&
-          response.headers.location
-        ) {
-          return fetchImageFromUrl(new URL(response.headers.location, url).href)
-            .then(resolve)
-            .catch(reject);
-        }
-
-        // Handle errors
-        if (response.statusCode !== 200) {
-          return reject(
-            new Error(
-              `Failed to fetch image: ${response.statusCode} ${response.statusMessage}`
-            )
-          );
-        }
-
-        const chunks = [];
-        response.on("data", (chunk) => chunks.push(chunk));
-        response.on("end", () => resolve(Buffer.concat(chunks)));
-        response.on("error", (err) =>
-          reject(new Error(`Stream error: ${err.message}`))
-        );
-      })
-      .on("error", (err) => reject(new Error(`Request error: ${err.message}`)));
-  });
+for (const fontRegistration of serverFontRegistrations) {
+  const fontPath = path.join(__dirname, fontRegistration.path);
+  if (fs.existsSync(fontPath)) {
+    GlobalFonts.registerFromPath(fontPath, fontRegistration.family);
+  }
 }
 
-/**
- * Convert hex color to RGB
- */
 function hexToRgb(hex) {
   const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
   return result
@@ -76,159 +75,18 @@ function hexToRgb(hex) {
     : { r: 255, g: 255, b: 255 };
 }
 
-/**
- * Convert angle to gradient coordinates
- */
 function angleToCoords(angle, width, height) {
   const rad = (angle * Math.PI) / 180;
-  const x1 = width / 2 - (Math.cos(rad) * width) / 2;
-  const y1 = height / 2 - (Math.sin(rad) * height) / 2;
-  const x2 = width / 2 + (Math.cos(rad) * width) / 2;
-  const y2 = height / 2 + (Math.sin(rad) * height) / 2;
+  const dx = Math.sin(rad);
+  const dy = -Math.cos(rad);
+  const radius = Math.hypot(width, height) / 2;
+  const x1 = width / 2 - dx * radius;
+  const y1 = height / 2 - dy * radius;
+  const x2 = width / 2 + dx * radius;
+  const y2 = height / 2 + dy * radius;
   return { x1, y1, x2, y2 };
 }
 
-/**
- * Draw background based on config
- */
-async function drawBackground(
-  ctx,
-  canvas,
-  bgConfig,
-  bgImageUrl,
-  bgImageBase64
-) {
-  // If user provided a background image, use it (overrides template)
-  if (bgImageUrl || bgImageBase64) {
-    try {
-      let img;
-      if (bgImageBase64) {
-        console.log("Loading background from Base64");
-        img = await loadImage(bgImageBase64);
-      } else if (bgImageUrl.startsWith("data:image")) {
-        console.log("Loading background from Data URI in URL field");
-        img = await loadImage(bgImageUrl);
-      } else {
-        console.log(`Fetching bg image from URL: ${bgImageUrl}`);
-        const imageBuffer = await fetchImageFromUrl(bgImageUrl);
-
-        if (!imageBuffer || imageBuffer.length === 0) {
-          throw new Error("Fetched image buffer is empty");
-        }
-
-        console.log(
-          `Successfully fetched image, size: ${imageBuffer.length} bytes`
-        );
-        try {
-          img = await loadImage(imageBuffer);
-        } catch (loadError) {
-          console.error(
-            `Canvas loadImage failed for buffer: ${loadError.message}`
-          );
-          // If it's a "Unsupported image type" error, it's often because the buffer
-          // is not a standard image format or the library lacks support for it.
-          throw loadError;
-        }
-      }
-
-      const scale = Math.max(
-        canvas.width / img.width,
-        canvas.height / img.height
-      );
-      const x = (canvas.width - img.width * scale) / 2;
-      const y = (canvas.height - img.height * scale) / 2;
-      ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
-      return;
-    } catch (error) {
-      console.warn(
-        `Failed to load custom background image, falling back to template background: ${error.message}`
-      );
-      // Fall through to template background logic below
-    }
-  }
-
-  // Use template background
-  if (bgConfig.type === "solid") {
-    ctx.fillStyle = bgConfig.color;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-  } else if (bgConfig.type === "gradient") {
-    const { angle = 0, stops } = bgConfig.gradient;
-    const coords = angleToCoords(angle, canvas.width, canvas.height);
-    const gradient = ctx.createLinearGradient(
-      coords.x1,
-      coords.y1,
-      coords.x2,
-      coords.y2
-    );
-    stops.forEach(({ offset, color }) => gradient.addColorStop(offset, color));
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-  } else if (bgConfig.type === "image" && bgConfig.imagePath) {
-    // Load background image from template's asset path
-    try {
-      const img = await loadImage(bgConfig.imagePath);
-      const scale = Math.max(
-        canvas.width / img.width,
-        canvas.height / img.height
-      );
-      const x = (canvas.width - img.width * scale) / 2;
-      const y = (canvas.height - img.height * scale) / 2;
-      ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
-    } catch (error) {
-      console.warn("Failed to load template background image:", error.message);
-      // Fallback to a simple gradient
-      const gradient = ctx.createLinearGradient(
-        0,
-        0,
-        canvas.width,
-        canvas.height
-      );
-      gradient.addColorStop(0, "#7dd3fc");
-      gradient.addColorStop(1, "#f9a8d4");
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-    }
-  }
-}
-
-/**
- * Draw decorations (circles, rectangles, lines)
- */
-function drawDecorations(ctx, decorations) {
-  if (!decorations) return;
-
-  decorations.forEach((dec) => {
-    ctx.fillStyle = dec.color || "rgba(255,255,255,0.1)";
-    ctx.strokeStyle = dec.color || "rgba(255,255,255,0.1)";
-
-    switch (dec.type) {
-      case "circle":
-        ctx.beginPath();
-        ctx.arc(dec.x, dec.y, dec.radius, 0, Math.PI * 2);
-        ctx.fill();
-        break;
-      case "rect":
-        if (dec.borderRadius) {
-          roundRect(ctx, dec.x, dec.y, dec.width, dec.height, dec.borderRadius);
-          ctx.fill();
-        } else {
-          ctx.fillRect(dec.x, dec.y, dec.width, dec.height);
-        }
-        break;
-      case "line":
-        ctx.lineWidth = dec.strokeWidth || 1;
-        ctx.beginPath();
-        ctx.moveTo(dec.x1, dec.y1);
-        ctx.lineTo(dec.x2, dec.y2);
-        ctx.stroke();
-        break;
-    }
-  });
-}
-
-/**
- * Draw rounded rectangle
- */
 function roundRect(ctx, x, y, width, height, radius) {
   ctx.beginPath();
   ctx.moveTo(x + radius, y);
@@ -243,245 +101,234 @@ function roundRect(ctx, x, y, width, height, radius) {
   ctx.closePath();
 }
 
-const avatarPresetBackgrounds = {
-  user: "#2563eb",
-  messageCircle: "#7c3aed",
-  heart: "#ec4899",
-  sparkles: "#f59e0b",
-  camera: "#0f766e",
-};
-
-function drawStar(ctx, centerX, centerY, outerRadius, innerRadius, points = 4) {
+function drawPolygonPath(ctx, points) {
+  if (!points?.length) return;
   ctx.beginPath();
-  for (let i = 0; i < points * 2; i++) {
-    const angle = -Math.PI / 2 + (i * Math.PI) / points;
-    const radius = i % 2 === 0 ? outerRadius : innerRadius;
-    const x = centerX + Math.cos(angle) * radius;
-    const y = centerY + Math.sin(angle) * radius;
-    if (i === 0) {
-      ctx.moveTo(x, y);
-    } else {
-      ctx.lineTo(x, y);
-    }
+  ctx.moveTo(points[0].x, points[0].y);
+  for (let index = 1; index < points.length; index += 1) {
+    ctx.lineTo(points[index].x, points[index].y);
   }
   ctx.closePath();
 }
 
-function drawAvatarIcon(ctx, preset, x, y, size, color) {
-  const centerX = x + size / 2;
-  const centerY = y + size / 2;
-
-  ctx.save();
-  ctx.strokeStyle = color;
-  ctx.fillStyle = color;
-  ctx.lineWidth = size * 0.07;
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-
-  switch (preset) {
-    case "messageCircle": {
-      const bubbleX = x + size * 0.25;
-      const bubbleY = y + size * 0.27;
-      const bubbleWidth = size * 0.5;
-      const bubbleHeight = size * 0.34;
-      roundRect(ctx, bubbleX, bubbleY, bubbleWidth, bubbleHeight, size * 0.08);
-      ctx.stroke();
-
-      ctx.beginPath();
-      ctx.moveTo(bubbleX + bubbleWidth * 0.35, bubbleY + bubbleHeight);
-      ctx.lineTo(bubbleX + bubbleWidth * 0.46, bubbleY + bubbleHeight + size * 0.1);
-      ctx.lineTo(bubbleX + bubbleWidth * 0.58, bubbleY + bubbleHeight);
-      ctx.stroke();
-
-      ctx.beginPath();
-      ctx.moveTo(bubbleX + size * 0.09, bubbleY + size * 0.11);
-      ctx.lineTo(bubbleX + bubbleWidth - size * 0.09, bubbleY + size * 0.11);
-      ctx.moveTo(bubbleX + size * 0.09, bubbleY + size * 0.2);
-      ctx.lineTo(bubbleX + bubbleWidth * 0.62, bubbleY + size * 0.2);
-      ctx.stroke();
-      break;
-    }
-    case "heart":
-      ctx.beginPath();
-      ctx.moveTo(centerX, y + size * 0.78);
-      ctx.bezierCurveTo(
-        x + size * 0.14,
-        y + size * 0.6,
-        x + size * 0.16,
-        y + size * 0.28,
-        centerX,
-        y + size * 0.38
-      );
-      ctx.bezierCurveTo(
-        x + size * 0.84,
-        y + size * 0.28,
-        x + size * 0.86,
-        y + size * 0.6,
-        centerX,
-        y + size * 0.78
-      );
-      ctx.fill();
-      break;
-    case "sparkles":
-      drawStar(ctx, centerX, centerY, size * 0.2, size * 0.08);
-      ctx.fill();
-      drawStar(
-        ctx,
-        x + size * 0.3,
-        y + size * 0.32,
-        size * 0.07,
-        size * 0.03
-      );
-      ctx.fill();
-      drawStar(
-        ctx,
-        x + size * 0.74,
-        y + size * 0.72,
-        size * 0.08,
-        size * 0.035
-      );
-      ctx.fill();
-      break;
-    case "camera": {
-      const bodyX = x + size * 0.22;
-      const bodyY = y + size * 0.34;
-      const bodyWidth = size * 0.56;
-      const bodyHeight = size * 0.28;
-      roundRect(ctx, bodyX, bodyY, bodyWidth, bodyHeight, size * 0.06);
-      ctx.stroke();
-
-      ctx.beginPath();
-      ctx.arc(centerX, centerY, size * 0.11, 0, Math.PI * 2);
-      ctx.stroke();
-
-      ctx.beginPath();
-      ctx.moveTo(bodyX + size * 0.09, bodyY);
-      ctx.lineTo(bodyX + size * 0.17, y + size * 0.26);
-      ctx.lineTo(bodyX + size * 0.34, y + size * 0.26);
-      ctx.lineTo(bodyX + size * 0.4, bodyY);
-      ctx.stroke();
-      break;
-    }
-    case "user":
-    default:
-      ctx.beginPath();
-      ctx.arc(centerX, y + size * 0.38, size * 0.14, 0, Math.PI * 2);
-      ctx.stroke();
-
-      ctx.beginPath();
-      ctx.arc(centerX, y + size * 0.78, size * 0.26, Math.PI, 0);
-      ctx.stroke();
-      break;
+function drawFallbackBackground(ctx, canvas, fallbackBackground) {
+  if (!fallbackBackground || fallbackBackground.type === "color") {
+    ctx.fillStyle = fallbackBackground?.color || "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    return;
   }
 
+  const coords = angleToCoords(
+    fallbackBackground.angle || 135,
+    canvas.width,
+    canvas.height
+  );
+  const gradient = ctx.createLinearGradient(
+    coords.x1,
+    coords.y1,
+    coords.x2,
+    coords.y2
+  );
+  gradient.addColorStop(0, fallbackBackground.startColor);
+  gradient.addColorStop(1, fallbackBackground.endColor);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+}
+
+function drawColorBackground(ctx, canvas, backgroundColor) {
+  ctx.fillStyle = backgroundColor;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+}
+
+function drawGradientBackground(ctx, canvas, backgroundGradient) {
+  const coords = angleToCoords(
+    backgroundGradient.angle,
+    canvas.width,
+    canvas.height
+  );
+  const gradient = ctx.createLinearGradient(
+    coords.x1,
+    coords.y1,
+    coords.x2,
+    coords.y2
+  );
+  gradient.addColorStop(0, backgroundGradient.startColor);
+  gradient.addColorStop(1, backgroundGradient.endColor);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+}
+
+async function drawContainedImage(ctx, canvas, imageSource, placement) {
+  const image = await loadImage(imageSource);
+  const targetX = placement?.x ?? 0;
+  const targetY = placement?.y ?? 0;
+  const targetWidth = placement?.width ?? canvas.width;
+  const targetHeight = placement?.height ?? canvas.height;
+  const fit = placement?.fit || "contain";
+  const zoom = placement?.zoom || 1;
+  const scale =
+    fit === "cover"
+      ? Math.max(targetWidth / image.width, targetHeight / image.height)
+      : Math.min(targetWidth / image.width, targetHeight / image.height);
+  const scaled = scale * zoom;
+  const drawWidth = image.width * scaled;
+  const drawHeight = image.height * scaled;
+  let drawX = targetX + (targetWidth - drawWidth) / 2;
+  let drawY = targetY + (targetHeight - drawHeight) / 2;
+
+  if (placement?.alignX === "left") {
+    drawX = targetX;
+  } else if (placement?.alignX === "right") {
+    drawX = targetX + targetWidth - drawWidth;
+  }
+
+  if (placement?.alignY === "top") {
+    drawY = targetY;
+  } else if (placement?.alignY === "bottom") {
+    drawY = targetY + targetHeight - drawHeight;
+  }
+
+  const offsetX = ((placement?.offsetX ?? 0) / 100) * targetWidth;
+  const offsetY = ((placement?.offsetY ?? 0) / 100) * targetHeight;
+  drawX += offsetX;
+  drawY += offsetY;
+
+  ctx.save();
+  if (placement) {
+    ctx.beginPath();
+    ctx.rect(targetX, targetY, targetWidth, targetHeight);
+    ctx.clip();
+  }
+  ctx.drawImage(image, drawX, drawY, drawWidth, drawHeight);
   ctx.restore();
 }
 
-async function drawAvatar(ctx, avatarConfig, avatarImageBase64, avatarIcon) {
-  if (!avatarConfig) return;
-
-  const { x, y, size } = avatarConfig;
-  const centerX = x + size / 2;
-  const centerY = y + size / 2;
-  const radius = size / 2;
-  const preset = avatarPresetBackgrounds[avatarIcon]
-    ? avatarIcon
-    : avatarConfig.defaultPreset || "user";
-  const backgroundColor =
-    avatarConfig.backgroundColor || avatarPresetBackgrounds[preset] || "#2563eb";
-  const borderColor = avatarConfig.borderColor || "#ffffff";
-  const borderWidth = avatarConfig.borderWidth || 0;
-  const iconColor = avatarConfig.iconColor || "#ffffff";
-
-  if (avatarConfig.shadow) {
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
-    ctx.closePath();
-    ctx.fillStyle = "rgba(15, 23, 42, 0.18)";
-    ctx.shadowColor = avatarConfig.shadow.color;
-    ctx.shadowBlur = avatarConfig.shadow.blur;
-    ctx.shadowOffsetY = avatarConfig.shadow.offsetY || 0;
-    ctx.fill();
-    ctx.restore();
+async function drawBackground(
+  ctx,
+  canvas,
+  backgroundInput,
+  fallbackBackground,
+  backgroundImagePlacement
+) {
+  if (backgroundInput.type === "image") {
+    drawFallbackBackground(ctx, canvas, fallbackBackground);
+    await drawContainedImage(
+      ctx,
+      canvas,
+      backgroundInput.imageBase64,
+      {
+        ...backgroundImagePlacement,
+        zoom: backgroundInput.zoom,
+        offsetX: backgroundInput.offsetX,
+        offsetY: backgroundInput.offsetY,
+      }
+    );
+    return;
   }
 
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
-  ctx.closePath();
-  ctx.clip();
-
-  let drewCustomAvatar = false;
-
-  if (avatarImageBase64) {
-    try {
-      const avatarImage = await loadImage(avatarImageBase64);
-      const scale = Math.max(size / avatarImage.width, size / avatarImage.height);
-      const drawWidth = avatarImage.width * scale;
-      const drawHeight = avatarImage.height * scale;
-      const drawX = x + (size - drawWidth) / 2;
-      const drawY = y + (size - drawHeight) / 2;
-      ctx.drawImage(avatarImage, drawX, drawY, drawWidth, drawHeight);
-      drewCustomAvatar = true;
-    } catch (error) {
-      console.warn(
-        `Failed to load custom avatar, falling back to preset icon: ${error.message}`
-      );
-    }
+  if (backgroundInput.type === "color") {
+    drawColorBackground(ctx, canvas, backgroundInput.color);
+    return;
   }
 
-  if (!drewCustomAvatar) {
-    ctx.fillStyle = backgroundColor;
-    ctx.fillRect(x, y, size, size);
-    drawAvatarIcon(ctx, preset, x, y, size, iconColor);
-  }
-
-  ctx.restore();
-
-  if (borderWidth > 0) {
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(centerX, centerY, radius - borderWidth / 2, 0, Math.PI * 2);
-    ctx.closePath();
-    ctx.strokeStyle = borderColor;
-    ctx.lineWidth = borderWidth;
-    ctx.stroke();
-    ctx.restore();
-  }
+  drawGradientBackground(ctx, canvas, backgroundInput.gradient);
 }
 
-/**
- * Draw banner based on config
- */
-function drawBanner(ctx, canvas, bannerConfig, bannerColor, bannerOpacity) {
-  if (!bannerConfig) return null;
+function resolveTemplateColor(color, colorRole, primaryColor) {
+  if (colorRole === "primaryColor") {
+    return primaryColor || color || "#2563eb";
+  }
 
-  const color = bannerColor || bannerConfig.defaultColor || "#ffffff";
-  const opacity = bannerOpacity ?? bannerConfig.defaultOpacity ?? 0.85;
+  if (colorRole === "primaryColorSoft") {
+    const rgb = hexToRgb(primaryColor || "#2563eb");
+    return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.12)`;
+  }
+
+  return color || "rgba(255,255,255,0.1)";
+}
+
+function drawDecorations(ctx, decorations, primaryColor) {
+  if (!decorations) return;
+
+  decorations.forEach((decoration) => {
+    const resolvedColor = resolveTemplateColor(
+      decoration.color,
+      decoration.colorRole,
+      primaryColor
+    );
+    ctx.fillStyle = resolvedColor;
+    ctx.strokeStyle = resolvedColor;
+
+    switch (decoration.type) {
+      case "circle":
+        ctx.beginPath();
+        ctx.arc(decoration.x, decoration.y, decoration.radius, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      case "rect":
+        if (decoration.borderRadius) {
+          roundRect(
+            ctx,
+            decoration.x,
+            decoration.y,
+            decoration.width,
+            decoration.height,
+            decoration.borderRadius
+          );
+          ctx.fill();
+        } else {
+          ctx.fillRect(
+            decoration.x,
+            decoration.y,
+            decoration.width,
+            decoration.height
+          );
+        }
+        break;
+      case "line":
+        ctx.lineWidth = decoration.strokeWidth || 1;
+        ctx.beginPath();
+        ctx.moveTo(decoration.x1, decoration.y1);
+        ctx.lineTo(decoration.x2, decoration.y2);
+        ctx.stroke();
+        break;
+      case "polygon":
+        drawPolygonPath(ctx, decoration.points);
+        if (decoration.fill !== false) {
+          ctx.fill();
+        }
+        if (decoration.strokeWidth) {
+          ctx.lineWidth = decoration.strokeWidth;
+          ctx.stroke();
+        }
+        break;
+    }
+  });
+}
+
+function drawSurface(ctx, canvas, surfaceConfig, surfaceColor, surfaceOpacity) {
+  if (!surfaceConfig) return null;
+
+  const color = surfaceColor || surfaceConfig.defaultColor || "#ffffff";
+  const opacity = surfaceOpacity ?? surfaceConfig.defaultOpacity ?? 0.85;
   const rgb = hexToRgb(color);
+  let bounds;
 
-  let bannerBounds;
-
-  if (bannerConfig.type === "centered") {
-    const height = bannerConfig.height;
+  if (surfaceConfig.type === "centered") {
+    const height = surfaceConfig.height;
     const y = (canvas.height - height) / 2;
-    const padding = bannerConfig.padding;
-
+    const padding = surfaceConfig.padding;
     ctx.fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${opacity})`;
     ctx.fillRect(padding, y, canvas.width - padding * 2, height);
-
-    bannerBounds = {
+    bounds = {
       x: padding,
       y,
       width: canvas.width - padding * 2,
       height,
       centerX: canvas.width / 2,
     };
-  } else if (bannerConfig.type === "left" || bannerConfig.type === "floating") {
-    const { x, y, width, height, borderRadius, border, shadow } = bannerConfig;
-
-    // Draw shadow if defined
+  } else {
+    const { x, y, width, height, borderRadius, border, shadow } = surfaceConfig;
     if (shadow) {
       ctx.save();
       ctx.shadowColor = shadow.color;
@@ -495,17 +342,16 @@ function drawBanner(ctx, canvas, bannerConfig, bannerColor, bannerOpacity) {
         ctx.fillRect(x, y, width, height);
       }
       ctx.restore();
-    } else {
-      ctx.fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${opacity})`;
-      if (borderRadius) {
-        roundRect(ctx, x, y, width, height, borderRadius);
-        ctx.fill();
-      } else {
-        ctx.fillRect(x, y, width, height);
-      }
     }
 
-    // Draw border if defined
+    ctx.fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${opacity})`;
+    if (borderRadius) {
+      roundRect(ctx, x, y, width, height, borderRadius);
+      ctx.fill();
+    } else {
+      ctx.fillRect(x, y, width, height);
+    }
+
     if (border) {
       ctx.strokeStyle = border.color;
       ctx.lineWidth = border.width;
@@ -517,15 +363,12 @@ function drawBanner(ctx, canvas, bannerConfig, bannerColor, bannerOpacity) {
       }
     }
 
-    bannerBounds = { x, y, width, height, centerX: x + width / 2 };
+    bounds = { x, y, width, height, centerX: x + width / 2 };
   }
 
-  return bannerBounds;
+  return bounds;
 }
 
-/**
- * Word wrap text
- */
 function wrapText(ctx, text, maxWidth) {
   const words = text.split(" ");
   const lines = [];
@@ -533,170 +376,262 @@ function wrapText(ctx, text, maxWidth) {
 
   for (const word of words) {
     const testLine = currentLine ? `${currentLine} ${word}` : word;
-    const metrics = ctx.measureText(testLine);
-    if (metrics.width > maxWidth && currentLine) {
+    if (ctx.measureText(testLine).width > maxWidth && currentLine) {
       lines.push(currentLine);
       currentLine = word;
     } else {
       currentLine = testLine;
     }
   }
+
   if (currentLine) lines.push(currentLine);
   return lines;
 }
 
-/**
- * Draw category text
- */
-function drawCategory(
-  ctx,
-  canvas,
-  categoryConfig,
-  categoryText,
-  categoryColor,
-  bannerBounds
-) {
-  if (!categoryConfig || !categoryText) return;
+function getFontSize(fontString) {
+  const match = fontString.match(/(\d+)px/);
+  return match ? parseInt(match[1], 10) : 72;
+}
 
-  const color = categoryColor || categoryConfig.defaultColor;
-  ctx.fillStyle = color;
-  ctx.font = categoryConfig.font;
+function setFontSize(fontString, newSize) {
+  return fontString.replace(/(\d+)px/, `${newSize}px`);
+}
 
-  const text =
-    categoryConfig.textTransform === "uppercase"
-      ? categoryText.toUpperCase()
-      : categoryText;
-  const align = categoryConfig.align || "center";
+function setFontFamily(fontString, newFamily) {
+  return fontString.replace(/(\d+)px\s+.+$/, `$1px ${newFamily}`);
+}
 
-  let x, y;
-
-  if (categoryConfig.x !== undefined) {
-    x = categoryConfig.x;
-  } else if (align === "center") {
-    x = canvas.width / 2;
-  } else if (bannerBounds) {
-    x = bannerBounds.x + 40;
+function setFontWeight(fontString, newWeight) {
+  if (/^(italic\s+)?\d+\s+\d+px/.test(fontString)) {
+    return fontString.replace(/^((?:italic\s+)?)\d+(\s+\d+px)/, `$1${newWeight}$2`);
   }
 
-  if (categoryConfig.y !== undefined) {
-    y = categoryConfig.y;
-  } else if (bannerBounds && categoryConfig.offsetY) {
-    y = bannerBounds.y + categoryConfig.offsetY;
+  if (/^\d+\s+\d+px/.test(fontString)) {
+    return fontString.replace(/^\d+(\s+\d+px)/, `${newWeight}$1`);
+  }
+
+  return `${newWeight} ${fontString}`;
+}
+
+function buildLucideSvgDataUri(iconName, color) {
+  const cacheKey = `${iconName}:${color}`;
+  if (lucideSvgDataUriCache.has(cacheKey)) {
+    return lucideSvgDataUriCache.get(cacheKey);
+  }
+
+  const IconComponent = curatedIconComponents[iconName];
+  if (!IconComponent) {
+    throw new Error(`Unknown icon: ${iconName}`);
+  }
+
+  const markup = renderToStaticMarkup(
+    React.createElement(IconComponent, {
+      color,
+      size: 24,
+      strokeWidth: 1.8,
+    })
+  );
+  const dataUri = `data:image/svg+xml;base64,${Buffer.from(markup).toString("base64")}`;
+  lucideSvgDataUriCache.set(cacheKey, dataUri);
+  return dataUri;
+}
+
+async function drawIcon(
+  ctx,
+  iconConfig,
+  iconSource,
+  iconName,
+  iconImageBase64,
+  iconColor,
+  iconBackgroundColor,
+  primaryColor
+) {
+  if (!iconConfig || iconSource === "none") return;
+
+  const { x, y, size, iconInset = 20 } = iconConfig;
+  const centerX = x + size / 2;
+  const centerY = y + size / 2;
+  const radius = size / 2;
+
+  if (iconConfig.shadow) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.fillStyle = "rgba(15, 23, 42, 0.18)";
+    ctx.shadowColor = iconConfig.shadow.color;
+    ctx.shadowBlur = iconConfig.shadow.blur;
+    ctx.shadowOffsetY = iconConfig.shadow.offsetY || 0;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+  ctx.closePath();
+  ctx.fillStyle = iconBackgroundColor || primaryColor || "#2563eb";
+  ctx.fill();
+  ctx.clip();
+
+  if (iconSource === "image" && iconImageBase64) {
+    const image = await loadImage(iconImageBase64);
+    const scale = Math.max(size / image.width, size / image.height);
+    const drawWidth = image.width * scale;
+    const drawHeight = image.height * scale;
+    const drawX = x + (size - drawWidth) / 2;
+    const drawY = y + (size - drawHeight) / 2;
+    ctx.drawImage(image, drawX, drawY, drawWidth, drawHeight);
+  } else if (iconSource === "lucide" && iconName) {
+    const svgDataUri = buildLucideSvgDataUri(iconName, iconColor || "#ffffff");
+    const iconImage = await loadImage(svgDataUri);
+    const innerSize = size - iconInset * 2;
+    ctx.drawImage(iconImage, x + iconInset, y + iconInset, innerSize, innerSize);
+  }
+
+  ctx.restore();
+
+  if (iconConfig.borderWidth) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, radius - iconConfig.borderWidth / 2, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.strokeStyle = iconConfig.borderColor || "#ffffff";
+    ctx.lineWidth = iconConfig.borderWidth;
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawNameText(
+  ctx,
+  canvas,
+  nameConfig,
+  name,
+  primaryColor,
+  surfaceBounds
+) {
+  if (!nameConfig || !name) return;
+
+  ctx.fillStyle = primaryColor || nameConfig.defaultColor;
+  ctx.font = nameConfig.font;
+
+  const text =
+    nameConfig.textTransform === "uppercase" ? name.toUpperCase() : name;
+  const align = nameConfig.align || "center";
+  let x;
+  let y;
+
+  if (nameConfig.x !== undefined) {
+    x = nameConfig.x;
+  } else if (align === "center") {
+    x = canvas.width / 2;
+  } else if (surfaceBounds) {
+    x = surfaceBounds.x + 40;
+  }
+
+  if (nameConfig.y !== undefined) {
+    y = nameConfig.y;
+  } else if (surfaceBounds && nameConfig.offsetY) {
+    y = surfaceBounds.y + nameConfig.offsetY;
   }
 
   ctx.textAlign = align;
   ctx.textBaseline = "middle";
 
-  // Draw badge background if enabled
-  if (categoryConfig.badge?.enabled) {
+  if (nameConfig.badge?.enabled) {
     const metrics = ctx.measureText(text);
-    const badgePadding = categoryConfig.badge.padding;
+    const badgePadding = nameConfig.badge.padding;
     const badgeWidth = metrics.width + badgePadding.x * 2;
     const badgeHeight = 30 + badgePadding.y;
     const badgeX = align === "center" ? x - badgeWidth / 2 : x - badgePadding.x;
     const badgeY = y - badgeHeight / 2;
-
-    ctx.fillStyle = categoryConfig.badge.color;
+    ctx.fillStyle = resolveTemplateColor(
+      nameConfig.badge.color,
+      nameConfig.badge.colorRole,
+      primaryColor
+    );
     roundRect(
       ctx,
       badgeX,
       badgeY,
       badgeWidth,
       badgeHeight,
-      categoryConfig.badge.borderRadius || 0
+      nameConfig.badge.borderRadius || 0
     );
     ctx.fill();
-    ctx.fillStyle = color;
+    ctx.fillStyle = primaryColor || nameConfig.defaultColor;
   }
 
   ctx.fillText(text, x, y);
-
   return y;
 }
 
-/**
- * Extract font size from font string
- */
-function getFontSize(fontString) {
-  const match = fontString.match(/(\d+)px/);
-  return match ? parseInt(match[1]) : 72;
-}
-
-/**
- * Create font string with new size
- */
-function setFontSize(fontString, newSize) {
-  return fontString.replace(/(\d+)px/, `${newSize}px`);
-}
-
-/**
- * Draw title text with dynamic font size adjustment
- */
-function drawTitle(
+function drawMainText(
   ctx,
   canvas,
-  titleConfig,
-  titleText,
-  titleColor,
-  bannerBounds,
-  categoryY
+  mainTextConfig,
+  mainText,
+  mainTextColor,
+  mainTextFontFamily,
+  mainTextFontSize,
+  surfaceBounds,
+  nameY
 ) {
-  if (!titleConfig || !titleText) return;
+  if (!mainTextConfig || !mainText) return;
 
-  const color = titleColor || titleConfig.defaultColor;
-  ctx.fillStyle = color;
-
-  // Handle italic style
-  let font = titleConfig.font;
-  if (titleConfig.style === "italic") {
+  const color = mainTextColor || mainTextConfig.defaultColor;
+  let font = mainTextConfig.font;
+  if (mainTextFontFamily) {
+    font = setFontFamily(font, mainTextFontFamily);
+  }
+  font = setFontWeight(font, 700);
+  if (mainTextFontSize) {
+    font = setFontSize(font, mainTextFontSize);
+  }
+  if (mainTextConfig.style === "italic") {
     font = font.replace(/^(\d+)/, "italic $1");
   }
 
-  const align = titleConfig.align || "center";
+  const align = mainTextConfig.align || "center";
   ctx.textAlign = align;
   ctx.textBaseline = "middle";
 
   let maxWidth;
-  if (titleConfig.maxWidth !== undefined) {
-    if (titleConfig.maxWidth < 0 && bannerBounds) {
-      maxWidth = bannerBounds.width + titleConfig.maxWidth;
+  if (mainTextConfig.maxWidth !== undefined) {
+    if (mainTextConfig.maxWidth < 0 && surfaceBounds) {
+      maxWidth = surfaceBounds.width + mainTextConfig.maxWidth;
     } else {
-      maxWidth = titleConfig.maxWidth;
+      maxWidth = mainTextConfig.maxWidth;
     }
   } else {
     maxWidth = canvas.width - 200;
   }
 
-  // Dynamic font size adjustment
   const originalFontSize = getFontSize(font);
   const minFontSize = Math.max(
-    originalFontSize * (titleConfig.minScale || 0.5),
+    originalFontSize * (mainTextConfig.minScale || 0.5),
     24
   );
-  const maxLines = titleConfig.maxLines || 2;
-  const maxHeight = bannerBounds
-    ? bannerBounds.height * 0.8
+  const maxLines = mainTextConfig.maxLines || 2;
+  const maxHeight = surfaceBounds
+    ? surfaceBounds.height * 0.8
     : canvas.height * 0.5;
 
   let currentFontSize = originalFontSize;
   let currentFont = font;
   let lines = [];
-  let lineHeight = titleConfig.lineHeight || 80;
+  let lineHeight = mainTextConfig.lineHeight || 80;
 
-  // Try to fit text by reducing font size if needed
   while (currentFontSize >= minFontSize) {
     ctx.font = currentFont;
-    lines = wrapText(ctx, titleText, maxWidth);
-
-    // Calculate total height needed
+    lines = wrapText(ctx, mainText, maxWidth);
     const totalHeight = lines.length * lineHeight;
 
-    // Check if it fits well (not too many lines and fits in available space)
     if (lines.length <= maxLines && totalHeight <= maxHeight) {
-      break; // Text fits!
+      break;
     }
 
-    // Reduce font size and line height proportionally
     currentFontSize -= 4;
     if (currentFontSize < minFontSize) {
       currentFontSize = minFontSize;
@@ -704,36 +639,34 @@ function drawTitle(
 
     currentFont = setFontSize(font, currentFontSize);
     lineHeight =
-      (titleConfig.lineHeight || 80) * (currentFontSize / originalFontSize);
+      (mainTextConfig.lineHeight || 80) * (currentFontSize / originalFontSize);
 
-    // One more check at minimum font size
     if (currentFontSize === minFontSize) {
       ctx.font = currentFont;
-      lines = wrapText(ctx, titleText, maxWidth);
+      lines = wrapText(ctx, mainText, maxWidth);
       break;
     }
   }
 
-  // Apply final font
   ctx.font = currentFont;
   ctx.fillStyle = color;
 
-  let x, startY;
-
-  if (titleConfig.x !== undefined) {
-    x = titleConfig.x;
+  let x;
+  let startY;
+  if (mainTextConfig.x !== undefined) {
+    x = mainTextConfig.x;
   } else if (align === "center") {
     x = canvas.width / 2;
-  } else if (bannerBounds) {
-    x = bannerBounds.x + 40;
+  } else if (surfaceBounds) {
+    x = surfaceBounds.x + 40;
   }
 
-  if (titleConfig.y !== undefined) {
-    startY = titleConfig.y;
-  } else if (categoryY && titleConfig.offsetY) {
-    startY = categoryY + titleConfig.offsetY;
-  } else if (bannerBounds) {
-    startY = bannerBounds.y + bannerBounds.height / 2;
+  if (mainTextConfig.y !== undefined) {
+    startY = mainTextConfig.y;
+  } else if (nameY && mainTextConfig.offsetY) {
+    startY = nameY + mainTextConfig.offsetY;
+  } else if (surfaceBounds) {
+    startY = surfaceBounds.y + surfaceBounds.height / 2;
   }
 
   lines.forEach((line, index) => {
@@ -741,9 +674,6 @@ function drawTitle(
   });
 }
 
-/**
- * Draw subtitle if enabled
- */
 function drawSubtitle(ctx, subtitleConfig) {
   if (!subtitleConfig?.enabled) return;
 
@@ -754,77 +684,74 @@ function drawSubtitle(ctx, subtitleConfig) {
   ctx.fillText(subtitleConfig.text, subtitleConfig.x, subtitleConfig.y);
 }
 
-/**
- * Generate a featured image with text overlay
- */
 export async function generateImage({
   templateId = "classic",
-  categoryText,
+  name,
   mainText,
-  bgImageUrl,
-  bgImageBase64,
-  avatarImageBase64,
-  avatarIcon,
-  bannerColor,
-  bannerOpacity,
-  categoryColor,
-  titleColor,
+  background,
+  iconSource = "none",
+  iconName,
+  iconImageBase64,
+  iconColor,
+  iconBackgroundColor,
+  surfaceColor,
+  surfaceOpacity,
+  primaryColor,
+  mainTextColor,
+  mainTextFontFamily,
+  mainTextFontSize,
   outputFilename,
   outputDir,
 }) {
   const template = getTemplate(templateId);
   const config = template.config;
-
-  // Create canvas
   const canvas = createCanvas(config.canvas.width, config.canvas.height);
   const ctx = canvas.getContext("2d");
 
-  // Draw background
   await drawBackground(
     ctx,
     canvas,
-    config.background,
-    bgImageUrl,
-    bgImageBase64
+    background,
+    config.backgroundFallback,
+    config.backgroundImagePlacement
   );
-
-  // Draw decorations (before banner)
-  drawDecorations(ctx, config.decorations);
-
-  // Draw banner
-  const bannerBounds = drawBanner(
+  drawDecorations(ctx, config.decorations, primaryColor);
+  const surfaceBounds = drawSurface(
     ctx,
     canvas,
-    config.banner,
-    bannerColor,
-    bannerOpacity
+    config.surface,
+    surfaceColor,
+    surfaceOpacity
   );
-
-  // Draw avatar if configured
-  await drawAvatar(ctx, config.avatar, avatarImageBase64, avatarIcon);
-
-  // Draw category text
-  const categoryY = drawCategory(
+  await drawIcon(
+    ctx,
+    config.icon,
+    iconSource,
+    iconName,
+    iconImageBase64,
+    iconColor,
+    iconBackgroundColor,
+    primaryColor
+  );
+  const nameY = drawNameText(
     ctx,
     canvas,
-    config.category,
-    categoryText,
-    categoryColor,
-    bannerBounds
+    config.nameField,
+    name,
+    primaryColor,
+    surfaceBounds
   );
-
-  // Draw title
-  drawTitle(
+  drawMainText(
     ctx,
     canvas,
-    config.title,
+    config.mainTextField,
     mainText,
-    titleColor,
-    bannerBounds,
-    categoryY
+    mainTextColor,
+    mainTextFontFamily,
+    mainTextFontSize,
+    surfaceBounds,
+    nameY
   );
-
-  // Draw subtitle if configured
   drawSubtitle(ctx, config.subtitle);
 
   const targetDir = outputDir || generatedDir;
@@ -834,9 +761,7 @@ export async function generateImage({
 
   const filename = outputFilename || `featured-image-${Date.now()}.webp`;
   const filepath = path.join(targetDir, filename);
-
-  // Save to file in WebP format with optimization
-  const buffer = canvas.toBuffer("image/webp", 80); // 80 is a good balance of quality and size
+  const buffer = canvas.toBuffer("image/webp", 80);
   fs.writeFileSync(filepath, buffer);
 
   return {

@@ -1,23 +1,13 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Download, Image, Loader2, Palette, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Camera,
-  Check,
-  Download,
-  Heart,
-  Image,
-  Loader2,
-  MessageCircle,
-  Palette,
-  Sparkles,
-  Upload,
-  User,
-  type LucideIcon,
-} from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { DynamicLucideIcon } from "@/components/DynamicLucideIcon";
+import { FontDropdown } from "@/components/FontDropdown";
+import { IconPickerModal } from "@/components/IconPickerModal";
 import { toast } from "sonner";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
@@ -25,286 +15,383 @@ const APP_NAME = import.meta.env.VITE_APP_NAME || "Featured Image Generator";
 const APP_DESCRIPTION =
   import.meta.env.VITE_APP_DESCRIPTION ||
   "Create stunning blog featured images with custom text overlays";
-const SOCIAL_TEMPLATE_ID = "socialMessage";
 
-interface AvatarOption {
-  id: string;
-  label: string;
-  Icon: LucideIcon;
-  previewColor: string;
-}
-
-const AVATAR_OPTIONS: AvatarOption[] = [
-  {
-    id: "user",
-    label: "Profile",
-    Icon: User,
-    previewColor: "#2563eb",
-  },
-  {
-    id: "messageCircle",
-    label: "Chat",
-    Icon: MessageCircle,
-    previewColor: "#7c3aed",
-  },
-  {
-    id: "heart",
-    label: "Heart",
-    Icon: Heart,
-    previewColor: "#ec4899",
-  },
-  {
-    id: "sparkles",
-    label: "Glow",
-    Icon: Sparkles,
-    previewColor: "#f59e0b",
-  },
-  {
-    id: "camera",
-    label: "Camera",
-    Icon: Camera,
-    previewColor: "#0f766e",
-  },
-];
+type BackgroundType = "color" | "gradient" | "image";
+type IconSource = "none" | "lucide" | "image";
 
 interface TemplatePreview {
-  bgGradient: string[];
   accentColor: string;
+  bgGradient: string[];
+}
+
+interface TemplateDefaults {
+  backgroundColor: string;
+  backgroundGradientCss: string;
+  backgroundType: BackgroundType;
+  iconBackgroundColor: string;
+  iconColor: string;
+  iconName: string;
+  iconSource: IconSource;
+  mainText: string;
+  mainTextColor: string;
+  mainTextFontFamily: string;
+  mainTextFontSize: number;
+  name: string;
+  primaryColor: string;
+  surfaceColor: string;
+  surfaceOpacity: number;
 }
 
 interface Template {
+  defaults: TemplateDefaults;
+  description: string;
   id: string;
   name: string;
-  description: string;
   preview: TemplatePreview;
   previewImageUrl?: string;
+  supportsIcon: boolean;
+}
+
+function parseLinearGradientCss(input: string) {
+  const match = input.match(
+    /^linear-gradient\(\s*(-?\d+(?:\.\d+)?)deg\s*,\s*([^,]+?)\s+0%\s*,\s*([^,]+?)\s+100%\s*\)$/i
+  );
+  if (!match) return null;
+
+  return {
+    angle: Number(match[1]),
+    endColor: match[3].trim(),
+    startColor: match[2].trim(),
+  };
+}
+
+function buildGradientCss(angle: number, startColor: string, endColor: string) {
+  return `linear-gradient(${angle}deg, ${startColor} 0%, ${endColor} 100%)`;
 }
 
 const FeaturedImageGenerator = () => {
   const [templates, setTemplates] = useState<Template[]>([]);
-  const [selectedTemplate, setSelectedTemplate] = useState<string>("classic");
-  const [categoryText, setCategoryText] = useState("HEALTH AND WELLNESS");
-  const [mainText, setMainText] = useState(
-    "How to Have a Better Work-Life Balance"
+  const [selectedTemplate, setSelectedTemplate] = useState("classic");
+  const [name, setName] = useState("");
+  const [mainText, setMainText] = useState("");
+  const [backgroundType, setBackgroundType] = useState<BackgroundType>("gradient");
+  const [backgroundColor, setBackgroundColor] = useState("#ffffff");
+  const [backgroundGradientCss, setBackgroundGradientCss] = useState(
+    buildGradientCss(135, "#667eea", "#764ba2")
   );
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [gradientAngle, setGradientAngle] = useState(135);
+  const [gradientStartColor, setGradientStartColor] = useState("#667eea");
+  const [gradientEndColor, setGradientEndColor] = useState("#764ba2");
+  const [backgroundImage, setBackgroundImage] = useState<string | null>(null);
+  const [backgroundImageZoom, setBackgroundImageZoom] = useState(1);
+  const [backgroundImageOffsetX, setBackgroundImageOffsetX] = useState(0);
+  const [backgroundImageOffsetY, setBackgroundImageOffsetY] = useState(0);
+  const [iconSource, setIconSource] = useState<IconSource>("none");
+  const [iconName, setIconName] = useState("sparkles");
+  const [iconImage, setIconImage] = useState<string | null>(null);
+  const [iconColor, setIconColor] = useState("#ffffff");
+  const [iconBackgroundColor, setIconBackgroundColor] = useState("#2563eb");
+  const [surfaceColor, setSurfaceColor] = useState("#ffffff");
+  const [surfaceOpacity, setSurfaceOpacity] = useState<number | undefined>(0.9);
+  const [primaryColor, setPrimaryColor] = useState("#1f2937");
+  const [mainTextColor, setMainTextColor] = useState("#111827");
+  const [mainTextFontFamily, setMainTextFontFamily] = useState("Arial, sans-serif");
+  const [mainTextFontSize, setMainTextFontSize] = useState(56);
+  const [showStyleOverrides, setShowStyleOverrides] = useState(false);
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
-  const [bgImage, setBgImage] = useState<string | null>(null);
-  const [avatarImage, setAvatarImage] = useState<string | null>(null);
-  const [selectedAvatarIcon, setSelectedAvatarIcon] = useState<string>("user");
-  const [bannerColor, setBannerColor] = useState<string>("");
-  const [bannerOpacity, setBannerOpacity] = useState<number | undefined>(
-    undefined
-  );
-  const [categoryColor, setCategoryColor] = useState<string>("");
-  const [titleColor, setTitleColor] = useState<string>("");
-  const [showColorOverrides, setShowColorOverrides] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const avatarInputRef = useRef<HTMLInputElement>(null);
-  const isSocialTemplate = selectedTemplate === SOCIAL_TEMPLATE_ID;
-  const selectedAvatarOption =
-    AVATAR_OPTIONS.find((option) => option.id === selectedAvatarIcon) ||
-    AVATAR_OPTIONS[0];
-  const SelectedAvatarIcon = selectedAvatarOption.Icon;
-  const categoryLabel = isSocialTemplate
-    ? "Profile Name / Handle"
-    : "Category / Subtitle";
-  const categoryPlaceholder = isSocialTemplate
-    ? "Enter a profile name or @handle"
-    : "Enter category text (e.g., HEALTH AND WELLNESS)";
-  const titleLabel = isSocialTemplate ? "Message Text" : "Main Title";
-  const titlePlaceholder = isSocialTemplate
-    ? "Write the social message you want to feature..."
-    : "Enter your main blog title...";
-  const resetColorOverrides = useCallback(() => {
-    setBannerColor("");
-    setBannerOpacity(undefined);
-    setCategoryColor("");
-    setTitleColor("");
-  }, []);
-  const selectTemplate = useCallback(
-    (templateId: string) => {
-      setSelectedTemplate(templateId);
-      resetColorOverrides();
-    },
-    [resetColorOverrides]
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isIconPickerOpen, setIsIconPickerOpen] = useState(false);
+  const backgroundInputRef = useRef<HTMLInputElement>(null);
+  const iconInputRef = useRef<HTMLInputElement>(null);
+
+  const selectedTemplateData = useMemo(
+    () => templates.find((template) => template.id === selectedTemplate) ?? null,
+    [selectedTemplate, templates]
   );
 
-  // Fetch templates on mount
+  const applyTemplateDefaults = useCallback((template: Template) => {
+    setSelectedTemplate(template.id);
+    setName(template.defaults.name);
+    setMainText(template.defaults.mainText);
+    setBackgroundType(template.defaults.backgroundType);
+    setBackgroundColor(template.defaults.backgroundColor);
+    setBackgroundGradientCss(template.defaults.backgroundGradientCss);
+    const parsedGradient = parseLinearGradientCss(template.defaults.backgroundGradientCss);
+    if (parsedGradient) {
+      setGradientAngle(parsedGradient.angle);
+      setGradientStartColor(parsedGradient.startColor);
+      setGradientEndColor(parsedGradient.endColor);
+    }
+    setBackgroundImage(null);
+    setBackgroundImageZoom(1);
+    setBackgroundImageOffsetX(0);
+    setBackgroundImageOffsetY(0);
+    if (backgroundInputRef.current) backgroundInputRef.current.value = "";
+    setIconSource(template.defaults.iconSource);
+    setIconName(template.defaults.iconName);
+    setIconImage(null);
+    if (iconInputRef.current) iconInputRef.current.value = "";
+    setIconColor(template.defaults.iconColor);
+    setIconBackgroundColor(template.defaults.iconBackgroundColor);
+    setSurfaceColor(template.defaults.surfaceColor);
+    setSurfaceOpacity(template.defaults.surfaceOpacity);
+    setPrimaryColor(template.defaults.primaryColor);
+    setMainTextColor(template.defaults.mainTextColor);
+    setMainTextFontFamily(template.defaults.mainTextFontFamily);
+    setMainTextFontSize(template.defaults.mainTextFontSize);
+  }, []);
+
+  const handlePrimaryColorChange = useCallback(
+    (nextColor: string) => {
+      setPrimaryColor((currentPrimaryColor) => {
+        if (iconBackgroundColor === currentPrimaryColor) {
+          setIconBackgroundColor(nextColor);
+        }
+        return nextColor;
+      });
+    },
+    [iconBackgroundColor]
+  );
+
+  const handleTemplateSelect = useCallback(
+    (template: Template) => {
+      startTransition(() => applyTemplateDefaults(template));
+    },
+    [applyTemplateDefaults]
+  );
+
   useEffect(() => {
+    const controller = new AbortController();
+
     const fetchTemplates = async () => {
       try {
-        const url = `${API_URL}/api/templates`;
-        const response = await fetch(url);
-
+        const response = await fetch(`${API_URL}/api/templates`, {
+          signal: controller.signal,
+        });
         const contentType = response.headers.get("content-type");
-        if (!contentType || !contentType.includes("application/json")) {
-          const text = await response.text();
-          console.error("Server returned non-JSON response:", text);
-          throw new Error(
-            `Server returned non-JSON response (${response.status}). The backend might be misconfigured or down.`
-          );
+        if (!contentType?.includes("application/json")) {
+          throw new Error("Server returned a non-JSON response");
         }
 
         const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(
-            data.error ||
-              `Server returned ${response.status}: ${response.statusText}`
-          );
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || "Failed to load templates");
         }
 
-        if (data.success) {
-          setTemplates(data.templates);
-        } else {
-          toast.error(
-            `Failed to load templates: ${data.error || "Unknown error"}`
-          );
+        const nextTemplates = data.templates as Template[];
+        setTemplates(nextTemplates);
+        const nextSelectedTemplate =
+          nextTemplates.find((template) => template.id === selectedTemplate) ||
+          nextTemplates[0];
+        if (nextSelectedTemplate) {
+          applyTemplateDefaults(nextSelectedTemplate);
         }
       } catch (error) {
+        if (controller.signal.aborted) return;
         console.error("Failed to fetch templates:", error);
-        const isMixedContent =
-          window.location.protocol === "https:" && API_URL.startsWith("http:");
-
-        let errorMessage =
-          "Failed to load templates. Please ensure the backend server is running.";
-        if (isMixedContent) {
-          errorMessage =
-            "Mixed Content Error: Your VITE_API_URL in .env is http but the site is https. Please change it to https.";
-        } else if (error instanceof Error) {
-          errorMessage = error.message;
-        }
-
-        toast.error(errorMessage);
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : "Failed to load templates. Please ensure the backend server is running."
+        );
       }
     };
+
     fetchTemplates();
-  }, []);
+    return () => controller.abort();
+  }, [applyTemplateDefaults]);
 
-  const handleBgUpload = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          setBgImage(event.target?.result as string);
-          toast.success("Background image uploaded!");
-        };
-        reader.readAsDataURL(file);
-      }
+  const syncGradientFromParts = useCallback(
+    (angle: number, startColor: string, endColor: string) => {
+      setGradientAngle(angle);
+      setGradientStartColor(startColor);
+      setGradientEndColor(endColor);
+      setBackgroundGradientCss(buildGradientCss(angle, startColor, endColor));
     },
     []
   );
 
-  const handleAvatarUpload = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          setAvatarImage(event.target?.result as string);
-          toast.success("Avatar uploaded!");
-        };
-        reader.readAsDataURL(file);
-      }
-    },
-    []
-  );
-
-  const clearAvatarImage = useCallback(() => {
-    setAvatarImage(null);
-    if (avatarInputRef.current) {
-      avatarInputRef.current.value = "";
+  const handleGradientCssChange = useCallback((value: string) => {
+    setBackgroundGradientCss(value);
+    const parsed = parseLinearGradientCss(value);
+    if (parsed) {
+      setGradientAngle(parsed.angle);
+      setGradientStartColor(parsed.startColor);
+      setGradientEndColor(parsed.endColor);
     }
   }, []);
 
+  const handleBackgroundUpload = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (loadEvent) => {
+        setBackgroundImage(loadEvent.target?.result as string);
+        setBackgroundType("image");
+        setBackgroundImageZoom(1);
+        setBackgroundImageOffsetX(0);
+        setBackgroundImageOffsetY(0);
+        toast.success("Background image uploaded");
+      };
+      reader.readAsDataURL(file);
+    },
+    []
+  );
+
+  const handleIconUpload = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (loadEvent) => {
+        setIconImage(loadEvent.target?.result as string);
+        setIconSource("image");
+        toast.success("Icon image uploaded");
+      };
+      reader.readAsDataURL(file);
+    },
+    []
+  );
+
+  const clearBackgroundImage = useCallback(() => {
+    setBackgroundImage(null);
+    setBackgroundImageZoom(1);
+    setBackgroundImageOffsetX(0);
+    setBackgroundImageOffsetY(0);
+    if (backgroundInputRef.current) backgroundInputRef.current.value = "";
+  }, []);
+
+  const clearIconImage = useCallback(() => {
+    setIconImage(null);
+    if (iconInputRef.current) iconInputRef.current.value = "";
+  }, []);
+
   const generateImage = useCallback(async () => {
+    if (!name.trim()) {
+      toast.error("Name is required");
+      return;
+    }
+    if (name.trim().length > 25) {
+      toast.error("Name must be 25 characters or fewer");
+      return;
+    }
     if (!mainText.trim()) {
-      toast.error("Please enter a main title");
+      toast.error("Main text is required");
+      return;
+    }
+    if (mainText.trim().length > 70) {
+      toast.error("Main text must be 70 characters or fewer");
+      return;
+    }
+    if (backgroundType === "image" && !backgroundImage) {
+      toast.error("Upload a background image to use image mode");
+      return;
+    }
+    if (backgroundType === "gradient" && !parseLinearGradientCss(backgroundGradientCss)) {
+      toast.error("Use a valid linear-gradient value for the background");
+      return;
+    }
+    if (iconSource === "image" && !iconImage) {
+      toast.error("Upload an icon image or switch icon mode");
       return;
     }
 
     setIsGenerating(true);
-
     try {
       const body: Record<string, unknown> = {
         templateId: selectedTemplate,
-        categoryText,
-        mainText,
-        bgImageBase64: bgImage,
+        name: name.trim(),
+        mainText: mainText.trim(),
+        backgroundType,
+        iconSource,
+        primaryColor,
+        mainTextColor,
+        mainTextFontFamily,
+        mainTextFontSize,
+        surfaceColor,
       };
 
-      if (avatarImage) body.avatarImageBase64 = avatarImage;
-      if (selectedAvatarIcon) body.avatarIcon = selectedAvatarIcon;
+      if (surfaceOpacity !== undefined) body.surfaceOpacity = surfaceOpacity;
 
-      // Only include color overrides if they're set
-      if (bannerColor) body.bannerColor = bannerColor;
-      if (bannerOpacity !== undefined) body.bannerOpacity = bannerOpacity;
-      if (categoryColor) body.categoryColor = categoryColor;
-      if (titleColor) body.titleColor = titleColor;
+      if (backgroundType === "color") {
+        body.backgroundColor = backgroundColor;
+      } else if (backgroundType === "gradient") {
+        body.backgroundGradientCss = backgroundGradientCss;
+      } else {
+        body.backgroundImageBase64 = backgroundImage;
+        body.backgroundImageZoom = backgroundImageZoom;
+        body.backgroundImageOffsetX = backgroundImageOffsetX;
+        body.backgroundImageOffsetY = backgroundImageOffsetY;
+      }
+
+      if (iconSource === "lucide") {
+        body.iconName = iconName;
+        body.iconColor = iconColor;
+        body.iconBackgroundColor = iconBackgroundColor;
+      } else if (iconSource === "image") {
+        body.iconImageBase64 = iconImage;
+      }
 
       const response = await fetch(`${API_URL}/api/generate-image`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
 
       const contentType = response.headers.get("content-type");
-      if (!contentType || !contentType.includes("application/json")) {
-        const text = await response.text();
-        console.error("Server returned non-JSON response:", text);
-        throw new Error(
-          `Server returned non-JSON response (${response.status}). The backend might be misconfigured or down.`
-        );
+      if (!contentType?.includes("application/json")) {
+        throw new Error("Server returned a non-JSON response");
       }
 
       const data = await response.json();
-
       if (!response.ok || !data.success) {
         throw new Error(data.error || "Failed to generate image");
       }
 
       setGeneratedImage(data.downloadUrl);
-      toast.success("Image generated successfully!");
+      toast.success("Image generated successfully");
     } catch (error) {
       console.error("Error generating image:", error);
-      toast.error(
-        error instanceof Error ? error.message : "Failed to generate image"
-      );
+      toast.error(error instanceof Error ? error.message : "Failed to generate image");
     } finally {
       setIsGenerating(false);
     }
   }, [
+    backgroundColor,
+    backgroundGradientCss,
+    backgroundImage,
+    backgroundImageOffsetX,
+    backgroundImageOffsetY,
+    backgroundImageZoom,
+    backgroundType,
+    iconBackgroundColor,
+    iconColor,
+    iconImage,
+    iconName,
+    iconSource,
     mainText,
-    categoryText,
-    bgImage,
-    avatarImage,
-    selectedAvatarIcon,
+    mainTextColor,
+    mainTextFontFamily,
+    mainTextFontSize,
+    name,
+    primaryColor,
     selectedTemplate,
-    bannerColor,
-    bannerOpacity,
-    categoryColor,
-    titleColor,
+    surfaceColor,
+    surfaceOpacity,
   ]);
 
   const downloadImage = useCallback(async () => {
     if (!generatedImage) return;
-
     try {
       const response = await fetch(generatedImage);
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
-
       const link = document.createElement("a");
       link.download = `featured-image-${Date.now()}.webp`;
       link.href = url;
       link.click();
-
       URL.revokeObjectURL(url);
-      toast.success("Image downloaded!");
     } catch (error) {
       console.error("Error downloading image:", error);
       toast.error("Failed to download image");
@@ -321,25 +408,20 @@ const FeaturedImageGenerator = () => {
           <p className="text-lg text-slate-400">{APP_DESCRIPTION}</p>
         </header>
 
-        {/* Template Selector */}
         <div className="space-y-4">
           <div className="flex items-center justify-between gap-3">
-            <Label className="text-lg font-semibold text-white">
-              Choose a Template
-            </Label>
+            <Label className="text-lg font-semibold text-white">Choose a Template</Label>
             <span className="text-sm text-slate-400">
-              {templates.find((template) => template.id === selectedTemplate)?.name ||
-                "Select"}
+              {selectedTemplateData?.name || "Select"}
             </span>
           </div>
-
           <div className="overflow-x-auto pb-1">
             <div className="flex min-w-max gap-2">
               {templates.map((template) => (
                 <button
                   key={`compact-${template.id}`}
                   type="button"
-                  onClick={() => selectTemplate(template.id)}
+                  onClick={() => handleTemplateSelect(template)}
                   className={`rounded-full border px-4 py-2 text-sm font-medium whitespace-nowrap transition ${
                     selectedTemplate === template.id
                       ? "border-white bg-white text-slate-900 shadow-lg shadow-white/10"
@@ -351,107 +433,38 @@ const FeaturedImageGenerator = () => {
               ))}
             </div>
           </div>
-
           <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
             {templates.map((template) => (
               <button
                 key={template.id}
                 type="button"
-                onClick={() => selectTemplate(template.id)}
-                className={`group relative overflow-hidden rounded-xl border-2 transition-all duration-300 ${
+                onClick={() => handleTemplateSelect(template)}
+                className={`group overflow-hidden rounded-xl border-2 transition-all duration-300 ${
                   selectedTemplate === template.id
-                    ? "border-white shadow-lg shadow-white/20 scale-105"
+                    ? "scale-105 border-white shadow-lg shadow-white/20"
                     : "border-slate-600 hover:border-slate-400"
                 }`}
               >
-                {/* Template Preview */}
-                <div
-                  className="aspect-video w-full relative">
-                  <div className="absolute inset-0">
-                    {template.previewImageUrl ? (
-                      <img
-                        src={template.previewImageUrl}
-                        alt={`${template.name} preview`}
-                        className="h-full w-full rounded-tl rounded-tr object-cover"
-                        loading="lazy"
-                      />
-                    ) : template.id === SOCIAL_TEMPLATE_ID ? (
-                      <div className="flex h-full flex-col rounded-2xl bg-white/95 p-3 shadow-lg shadow-slate-900/20">
-                        <div className="flex items-center gap-2">
-                          <div
-                            className="flex h-8 w-8 items-center justify-center rounded-full"
-                            style={{ backgroundColor: template.preview.accentColor }}
-                          >
-                            <User className="h-4 w-4 text-white" />
-                          </div>
-                          <div className="space-y-1">
-                            <div className="h-2 w-16 rounded-full bg-slate-900/80" />
-                            <div className="h-1.5 w-10 rounded-full bg-slate-400/70" />
-                          </div>
-                        </div>
-                        <div className="mt-4 space-y-2">
-                          <div className="h-2 w-full rounded-full bg-slate-900/75" />
-                          <div className="h-2 w-5/6 rounded-full bg-slate-800/55" />
-                          <div className="h-2 w-2/3 rounded-full bg-slate-800/45" />
-                        </div>
-                        <div className="mt-auto flex gap-2">
-                          <div className="h-1.5 flex-1 rounded-full bg-slate-300/90" />
-                          <div className="h-1.5 w-10 rounded-full bg-slate-300/75" />
-                          <div className="h-1.5 w-8 rounded-full bg-slate-300/75" />
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex h-full items-center justify-center">
-                        <div
-                          className={`w-full rounded-md p-2 ${
-                            template.id === "modernDark"
-                              ? "bg-white/5 border border-white/10"
-                              : template.id === "minimal"
-                                ? "bg-transparent"
-                                : template.id === "editorial"
-                                  ? "bg-transparent"
-                                  : "bg-white/80"
-                          }`}
-                        >
-                          <div
-                            className="h-1 w-8 rounded mb-1 mx-auto"
-                            style={{
-                              backgroundColor: template.preview.accentColor,
-                            }}
-                          />
-                          <div
-                            className={`h-2 w-16 rounded mx-auto ${
-                              template.id === "modernDark"
-                                ? "bg-white/80"
-                                : "bg-slate-800/60"
-                            }`}
-                          />
-                          <div
-                            className={`h-1.5 w-12 rounded mx-auto mt-1 ${
-                              template.id === "modernDark"
-                                ? "bg-white/60"
-                                : "bg-slate-800/40"
-                            }`}
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Selected indicator */}
-                  {selectedTemplate === template.id && (
-                    <div className="absolute top-2 right-2 bg-white rounded-full p-1">
-                      <Check className="h-3 w-3 text-slate-900" />
-                    </div>
+                <div className="aspect-video w-full">
+                  {template.previewImageUrl ? (
+                    <img
+                      src={template.previewImageUrl}
+                      alt={`${template.name} preview`}
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div
+                      className="h-full w-full"
+                      style={{
+                        background: `linear-gradient(135deg, ${template.preview.bgGradient[0]}, ${template.preview.bgGradient[1] || template.preview.bgGradient[0]})`,
+                      }}
+                    />
                   )}
                 </div>
-
-                {/* Template Info */}
-                <div className="bg-slate-800 p-3">
-                  <h3 className="font-semibold text-white text-sm">
-                    {template.name}
-                  </h3>
-                  <p className="text-xs text-slate-400 mt-0.5 line-clamp-1">
+                <div className="bg-slate-800 p-3 text-left">
+                  <h3 className="text-sm font-semibold text-white">{template.name}</h3>
+                  <p className="mt-0.5 line-clamp-1 text-xs text-slate-400">
                     {template.description}
                   </p>
                 </div>
@@ -468,262 +481,535 @@ const FeaturedImageGenerator = () => {
                 Content & Settings
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Category Text Input */}
+            <CardContent className="space-y-5">
               <div className="space-y-2">
-                <Label className="text-slate-300">{categoryLabel}</Label>
-                <Textarea
-                  placeholder={categoryPlaceholder}
-                  value={categoryText}
-                  onChange={(e) => setCategoryText(e.target.value)}
-                  className="min-h-[60px] resize-none bg-slate-900/50 border-slate-600 text-white placeholder:text-slate-500"
+                <div className="flex items-center justify-between gap-2">
+                  <Label className="text-slate-300">Name</Label>
+                  <span className="text-xs text-slate-500">{name.length}/25</span>
+                </div>
+                <Input
+                  value={name}
+                  maxLength={25}
+                  onChange={(event) => setName(event.target.value)}
+                  placeholder="Enter a name"
+                  className="bg-slate-900/50 text-white placeholder:text-slate-500"
                 />
               </div>
 
-              {/* Main Title Input */}
               <div className="space-y-2">
-                <Label className="text-slate-300">{titleLabel}</Label>
+                <div className="flex items-center justify-between gap-2">
+                  <Label className="text-slate-300">Main Text</Label>
+                  <span className="text-xs text-slate-500">{mainText.length}/70</span>
+                </div>
                 <Textarea
-                  placeholder={titlePlaceholder}
                   value={mainText}
-                  onChange={(e) => setMainText(e.target.value)}
-                  className="min-h-[80px] resize-none bg-slate-900/50 border-slate-600 text-white placeholder:text-slate-500"
+                  maxLength={70}
+                  onChange={(event) => setMainText(event.target.value)}
+                  placeholder="Enter the main message"
+                  rows={4}
+                  className="resize-none bg-slate-900/50 text-white placeholder:text-slate-500"
                 />
               </div>
 
-              {isSocialTemplate && (
-                <div className="space-y-3 rounded-xl border border-slate-700 bg-slate-900/40 p-4">
-                  <div className="flex items-center justify-between gap-4">
-                    <div>
-                      <Label className="text-slate-300">Avatar</Label>
-                      <p className="mt-1 text-xs text-slate-500">
-                        Choose a built-in icon or upload a profile image for the
-                        social card.
-                      </p>
-                    </div>
-                    <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-full border border-slate-600 bg-slate-800">
-                      {avatarImage ? (
-                        <img
-                          src={avatarImage}
-                          alt="Avatar preview"
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <div
-                          className="flex h-full w-full items-center justify-center"
-                          style={{
-                            backgroundColor: selectedAvatarOption.previewColor,
-                          }}
-                        >
-                          <SelectedAvatarIcon className="h-6 w-6 text-white" />
-                        </div>
-                      )}
+              <div className="space-y-3 rounded-xl border border-slate-700 bg-slate-900/40 p-4">
+                <div>
+                  <Label className="text-slate-300">Main Text Font</Label>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Choose the font family and size for the main text only.
+                  </p>
+                </div>
+                <FontDropdown
+                  value={mainTextFontFamily}
+                  onChange={setMainTextFontFamily}
+                />
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <Label className="text-xs text-slate-400">Main Text Font Size</Label>
+                    <Input
+                      type="number"
+                      min={24}
+                      max={120}
+                      value={mainTextFontSize}
+                      onChange={(event) =>
+                        setMainTextFontSize(
+                          Math.max(24, Math.min(120, Number(event.target.value) || 24))
+                        )
+                      }
+                      className="w-24 bg-slate-950/70 text-white"
+                    />
+                  </div>
+                  <Input
+                    type="range"
+                    min="24"
+                    max="120"
+                    value={mainTextFontSize}
+                    onChange={(event) => setMainTextFontSize(Number(event.target.value))}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-3 rounded-xl border border-slate-700 bg-slate-900/40 p-4">
+                <div>
+                  <Label className="text-slate-300">Background Type</Label>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Choose a color, gradient, or uploaded image background.
+                  </p>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {(["color", "gradient", "image"] as BackgroundType[]).map((type) => (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => setBackgroundType(type)}
+                      className={`rounded-xl border px-3 py-3 text-sm font-medium capitalize transition ${
+                        backgroundType === type
+                          ? "border-white bg-slate-800 text-white"
+                          : "border-slate-700 bg-slate-950/70 text-slate-400 hover:border-slate-500 hover:text-white"
+                      }`}
+                    >
+                      {type}
+                    </button>
+                  ))}
+                </div>
+
+                {backgroundType === "color" && (
+                  <div className="space-y-2">
+                    <Label className="text-xs text-slate-400">Background Color</Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="color"
+                        value={backgroundColor}
+                        onChange={(event) => setBackgroundColor(event.target.value)}
+                        className="h-10 w-14 cursor-pointer p-1"
+                      />
+                      <Input
+                        value={backgroundColor}
+                        onChange={(event) => setBackgroundColor(event.target.value)}
+                        className="bg-slate-950/70 text-white"
+                      />
                     </div>
                   </div>
+                )}
 
-                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
-                    {AVATAR_OPTIONS.map((option) => (
-                      <button
-                        key={option.id}
+                {backgroundType === "gradient" && (
+                  <div className="space-y-3">
+                    <div
+                      className="h-20 rounded-2xl border border-slate-700"
+                      style={{ background: backgroundGradientCss }}
+                    />
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                      <div className="space-y-2">
+                        <Label className="text-xs text-slate-400">Start Color</Label>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="color"
+                            value={gradientStartColor}
+                            onChange={(event) =>
+                              syncGradientFromParts(
+                                gradientAngle,
+                                event.target.value,
+                                gradientEndColor
+                              )
+                            }
+                            className="h-10 w-14 cursor-pointer p-1"
+                          />
+                          <Input
+                            value={gradientStartColor}
+                            onChange={(event) =>
+                              syncGradientFromParts(
+                                gradientAngle,
+                                event.target.value,
+                                gradientEndColor
+                              )
+                            }
+                            className="bg-slate-950/70 text-white"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs text-slate-400">End Color</Label>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="color"
+                            value={gradientEndColor}
+                            onChange={(event) =>
+                              syncGradientFromParts(
+                                gradientAngle,
+                                gradientStartColor,
+                                event.target.value
+                              )
+                            }
+                            className="h-10 w-14 cursor-pointer p-1"
+                          />
+                          <Input
+                            value={gradientEndColor}
+                            onChange={(event) =>
+                              syncGradientFromParts(
+                                gradientAngle,
+                                gradientStartColor,
+                                event.target.value
+                              )
+                            }
+                            className="bg-slate-950/70 text-white"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs text-slate-400">Angle</Label>
+                        <Input
+                          type="range"
+                          min="0"
+                          max="360"
+                          value={gradientAngle}
+                          onChange={(event) =>
+                            syncGradientFromParts(
+                              Number(event.target.value),
+                              gradientStartColor,
+                              gradientEndColor
+                            )
+                          }
+                        />
+                        <div className="text-xs text-slate-500">{gradientAngle}deg</div>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs text-slate-400">Manual Gradient Config</Label>
+                      <Input
+                        value={backgroundGradientCss}
+                        onChange={(event) => handleGradientCssChange(event.target.value)}
+                        className="bg-slate-950/70 text-white"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {backgroundType === "image" && (
+                  <div className="space-y-3">
+                    <div className="flex gap-2">
+                      <input
+                        ref={backgroundInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleBackgroundUpload}
+                        className="hidden"
+                      />
+                      <Button
                         type="button"
-                        onClick={() => setSelectedAvatarIcon(option.id)}
-                        className={`rounded-xl border px-3 py-3 transition ${
-                          selectedAvatarIcon === option.id
+                        variant="outline"
+                        onClick={() => backgroundInputRef.current?.click()}
+                        className="flex-1 border-slate-600 bg-slate-900/50 text-slate-300 hover:bg-slate-700 hover:text-white"
+                      >
+                        <Upload className="mr-2 h-4 w-4" />
+                        {backgroundImage ? "Change Image" : "Upload Image"}
+                      </Button>
+                      {backgroundImage && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={clearBackgroundImage}
+                          className="text-slate-400 hover:text-white"
+                        >
+                          Clear
+                        </Button>
+                      )}
+                    </div>
+                    {backgroundImage && (
+                      <>
+                        <img
+                          src={backgroundImage}
+                          alt="Background preview"
+                          className="h-28 w-full rounded-xl border border-slate-700 object-contain bg-slate-950/60"
+                        />
+                        <div className="space-y-3 rounded-xl border border-slate-700 bg-slate-950/50 p-3">
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between gap-3 text-xs text-slate-400">
+                              <Label className="text-xs text-slate-400">
+                                Background Zoom
+                              </Label>
+                              <span>{backgroundImageZoom.toFixed(2)}x</span>
+                            </div>
+                            <Input
+                              type="range"
+                              min="1"
+                              max="3"
+                              step="0.01"
+                              value={backgroundImageZoom}
+                              onChange={(event) =>
+                                setBackgroundImageZoom(Number(event.target.value))
+                              }
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between gap-3 text-xs text-slate-400">
+                              <Label className="text-xs text-slate-400">
+                                Horizontal Position
+                              </Label>
+                              <span>{backgroundImageOffsetX}</span>
+                            </div>
+                            <Input
+                              type="range"
+                              min="-100"
+                              max="100"
+                              step="1"
+                              value={backgroundImageOffsetX}
+                              onChange={(event) =>
+                                setBackgroundImageOffsetX(Number(event.target.value))
+                              }
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between gap-3 text-xs text-slate-400">
+                              <Label className="text-xs text-slate-400">
+                                Vertical Position
+                              </Label>
+                              <span>{backgroundImageOffsetY}</span>
+                            </div>
+                            <Input
+                              type="range"
+                              min="-100"
+                              max="100"
+                              step="1"
+                              value={backgroundImageOffsetY}
+                              onChange={(event) =>
+                                setBackgroundImageOffsetY(Number(event.target.value))
+                              }
+                            />
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {selectedTemplateData?.supportsIcon && (
+                <div className="space-y-3 rounded-xl border border-slate-700 bg-slate-900/40 p-4">
+                  <div>
+                    <Label className="text-slate-300">Icon or Icon Image</Label>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Add an optional Lucide icon or upload a custom icon image.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(["none", "lucide", "image"] as IconSource[]).map((type) => (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => {
+                          setIconSource(type);
+                          if (type !== "image") clearIconImage();
+                        }}
+                        className={`rounded-xl border px-3 py-3 text-sm font-medium capitalize transition ${
+                          iconSource === type
                             ? "border-white bg-slate-800 text-white"
-                            : "border-slate-700 bg-slate-900/60 text-slate-400 hover:border-slate-500 hover:text-white"
+                            : "border-slate-700 bg-slate-950/70 text-slate-400 hover:border-slate-500 hover:text-white"
                         }`}
                       >
-                        <div
-                          className="mx-auto mb-2 flex h-9 w-9 items-center justify-center rounded-full"
-                          style={{ backgroundColor: option.previewColor }}
-                        >
-                          <option.Icon className="h-4 w-4 text-white" />
-                        </div>
-                        <span className="text-xs font-medium">{option.label}</span>
+                        {type}
                       </button>
                     ))}
                   </div>
 
-                  <div className="flex gap-2">
-                    <input
-                      type="file"
-                      ref={avatarInputRef}
-                      onChange={handleAvatarUpload}
-                      accept="image/*"
-                      className="hidden"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => avatarInputRef.current?.click()}
-                      className="flex-1 border-slate-600 bg-slate-900/50 text-slate-300 hover:bg-slate-700 hover:text-white"
-                    >
-                      <Upload className="mr-2 h-4 w-4" />
-                      {avatarImage ? "Change Avatar" : "Upload Avatar"}
-                    </Button>
-                    {avatarImage && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        onClick={clearAvatarImage}
-                        className="text-slate-400 hover:text-white"
-                      >
-                        Use Icon
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Background Image Upload */}
-              <div className="space-y-2">
-                <Label className="text-slate-300">
-                  Background Image (Optional)
-                </Label>
-                <div className="flex gap-2">
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    onChange={handleBgUpload}
-                    accept="image/*"
-                    className="hidden"
-                  />
-                  <Button
-                    variant="outline"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="flex-1 border-slate-600 bg-slate-900/50 text-slate-300 hover:bg-slate-700 hover:text-white"
-                  >
-                    <Upload className="mr-2 h-4 w-4" />
-                    {bgImage ? "Change Image" : "Upload Image"}
-                  </Button>
-                  {bgImage && (
-                    <Button
-                      variant="ghost"
-                      onClick={() => setBgImage(null)}
-                      className="text-slate-400 hover:text-white"
-                    >
-                      Clear
-                    </Button>
-                  )}
-                </div>
-                {bgImage && (
-                  <img
-                    src={bgImage}
-                    alt="Background preview"
-                    className="w-full h-20 object-cover rounded-md border border-slate-600"
-                  />
-                )}
-              </div>
-
-              {/* Color Overrides Toggle */}
-              <div className="pt-2">
-                <Button
-                  variant="ghost"
-                  onClick={() => setShowColorOverrides(!showColorOverrides)}
-                  className="w-full justify-between text-slate-300 hover:text-white hover:bg-slate-700"
-                >
-                  <span className="flex items-center gap-2">
-                    <Palette className="h-4 w-4" />
-                    Color Overrides
-                  </span>
-                  <span className="text-xs text-slate-500">
-                    {showColorOverrides ? "Hide" : "Show"}
-                  </span>
-                </Button>
-
-                {showColorOverrides && (
-                  <div className="mt-3 p-4 rounded-lg bg-slate-900/50 border border-slate-700 space-y-3">
-                    <p className="text-xs text-slate-500 mb-3">
-                      Override template defaults (leave empty to use template
-                      colors)
-                    </p>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <Label className="text-xs text-slate-400">
-                          Banner Color
-                        </Label>
-                        <div className="flex gap-2 items-center">
-                          <Input
-                            type="color"
-                            value={bannerColor || "#ffffff"}
-                            onChange={(e) => setBannerColor(e.target.value)}
-                            className="w-10 h-8 p-0 border-0 cursor-pointer"
-                          />
-                          <Input
-                            type="text"
-                            value={bannerColor}
-                            onChange={(e) => setBannerColor(e.target.value)}
-                            placeholder="Default"
-                            className="flex-1 h-8 text-xs bg-slate-800 border-slate-600 text-slate-300"
+                  {iconSource === "lucide" && (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between gap-4 rounded-2xl border border-slate-700 bg-slate-950/70 p-4">
+                        <div>
+                          <div className="text-sm font-medium text-white">Selected Icon</div>
+                          <div className="mt-1 text-xs text-slate-500">{iconName}</div>
+                        </div>
+                        <div
+                          className="flex h-14 w-14 items-center justify-center rounded-full"
+                          style={{ backgroundColor: iconBackgroundColor }}
+                        >
+                          <DynamicLucideIcon
+                            name={iconName}
+                            className="h-7 w-7"
+                            style={{ color: iconColor }}
+                            strokeWidth={1.8}
                           />
                         </div>
                       </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setIsIconPickerOpen(true)}
+                        className="w-full border-slate-600 bg-slate-900/50 text-slate-300 hover:bg-slate-700 hover:text-white"
+                      >
+                        Choose Icon
+                      </Button>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-2">
+                          <Label className="text-xs text-slate-400">Icon Color</Label>
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="color"
+                              value={iconColor}
+                              onChange={(event) => setIconColor(event.target.value)}
+                              className="h-10 w-14 cursor-pointer p-1"
+                            />
+                            <Input
+                              value={iconColor}
+                              onChange={(event) => setIconColor(event.target.value)}
+                              className="bg-slate-950/70 text-white"
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-xs text-slate-400">Icon Background</Label>
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="color"
+                              value={iconBackgroundColor}
+                              onChange={(event) =>
+                                setIconBackgroundColor(event.target.value)
+                              }
+                              className="h-10 w-14 cursor-pointer p-1"
+                            />
+                            <Input
+                              value={iconBackgroundColor}
+                              onChange={(event) =>
+                                setIconBackgroundColor(event.target.value)
+                              }
+                              className="bg-slate-950/70 text-white"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
+                  {iconSource === "image" && (
+                    <div className="space-y-3">
+                      <div className="flex gap-2">
+                        <input
+                          ref={iconInputRef}
+                          type="file"
+                          accept="image/*"
+                          onChange={handleIconUpload}
+                          className="hidden"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => iconInputRef.current?.click()}
+                          className="flex-1 border-slate-600 bg-slate-900/50 text-slate-300 hover:bg-slate-700 hover:text-white"
+                        >
+                          <Upload className="mr-2 h-4 w-4" />
+                          {iconImage ? "Change Icon Image" : "Upload Icon Image"}
+                        </Button>
+                        {iconImage && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            onClick={clearIconImage}
+                            className="text-slate-400 hover:text-white"
+                          >
+                            Clear
+                          </Button>
+                        )}
+                      </div>
+                      {iconImage && (
+                        <img
+                          src={iconImage}
+                          alt="Icon preview"
+                          className="h-24 w-24 rounded-2xl border border-slate-700 object-contain bg-slate-950/60"
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="pt-2">
+                <Button
+                  variant="ghost"
+                  onClick={() => setShowStyleOverrides((value) => !value)}
+                  className="w-full justify-between text-slate-300 hover:bg-slate-700 hover:text-white"
+                >
+                  <span className="flex items-center gap-2">
+                    <Palette className="h-4 w-4" />
+                    Style Overrides
+                  </span>
+                  <span className="text-xs text-slate-500">
+                    {showStyleOverrides ? "Hide" : "Show"}
+                  </span>
+                </Button>
+
+                {showStyleOverrides && (
+                  <div className="mt-3 space-y-3 rounded-lg border border-slate-700 bg-slate-900/50 p-4">
+                    <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1">
-                        <Label className="text-xs text-slate-400">
-                          Banner Opacity
-                        </Label>
+                        <Label className="text-xs text-slate-400">Surface Color</Label>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="color"
+                            value={surfaceColor}
+                            onChange={(event) => setSurfaceColor(event.target.value)}
+                            className="h-10 w-14 cursor-pointer p-1"
+                          />
+                          <Input
+                            value={surfaceColor}
+                            onChange={(event) => setSurfaceColor(event.target.value)}
+                            className="bg-slate-950/70 text-white"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs text-slate-400">Surface Opacity</Label>
                         <Input
                           type="range"
                           min="0"
                           max="1"
                           step="0.05"
-                          value={bannerOpacity ?? 0.85}
-                          onChange={(e) =>
-                            setBannerOpacity(parseFloat(e.target.value))
-                          }
-                          className="w-full"
+                          value={surfaceOpacity ?? 0.9}
+                          onChange={(event) => setSurfaceOpacity(Number(event.target.value))}
                         />
                       </div>
-
                       <div className="space-y-1">
-                        <Label className="text-xs text-slate-400">
-                          Category Color
-                        </Label>
-                        <div className="flex gap-2 items-center">
+                        <Label className="text-xs text-slate-400">Primary Color</Label>
+                        <div className="flex items-center gap-2">
                           <Input
                             type="color"
-                            value={categoryColor || "#c67c4e"}
-                            onChange={(e) => setCategoryColor(e.target.value)}
-                            className="w-10 h-8 p-0 border-0 cursor-pointer"
+                            value={primaryColor}
+                            onChange={(event) =>
+                              handlePrimaryColorChange(event.target.value)
+                            }
+                            className="h-10 w-14 cursor-pointer p-1"
                           />
                           <Input
-                            type="text"
-                            value={categoryColor}
-                            onChange={(e) => setCategoryColor(e.target.value)}
-                            placeholder="Default"
-                            className="flex-1 h-8 text-xs bg-slate-800 border-slate-600 text-slate-300"
+                            value={primaryColor}
+                            onChange={(event) =>
+                              handlePrimaryColorChange(event.target.value)
+                            }
+                            className="bg-slate-950/70 text-white"
                           />
                         </div>
                       </div>
-
                       <div className="space-y-1">
-                        <Label className="text-xs text-slate-400">
-                          Title Color
-                        </Label>
-                        <div className="flex gap-2 items-center">
+                        <Label className="text-xs text-slate-400">Main Text Color</Label>
+                        <div className="flex items-center gap-2">
                           <Input
                             type="color"
-                            value={titleColor || "#1a1a1a"}
-                            onChange={(e) => setTitleColor(e.target.value)}
-                            className="w-10 h-8 p-0 border-0 cursor-pointer"
+                            value={mainTextColor}
+                            onChange={(event) => setMainTextColor(event.target.value)}
+                            className="h-10 w-14 cursor-pointer p-1"
                           />
                           <Input
-                            type="text"
-                            value={titleColor}
-                            onChange={(e) => setTitleColor(e.target.value)}
-                            placeholder="Default"
-                            className="flex-1 h-8 text-xs bg-slate-800 border-slate-600 text-slate-300"
+                            value={mainTextColor}
+                            onChange={(event) => setMainTextColor(event.target.value)}
+                            className="bg-slate-950/70 text-white"
                           />
                         </div>
                       </div>
                     </div>
-
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={resetColorOverrides}
-                      className="w-full text-xs text-slate-500 hover:text-white mt-2"
+                      onClick={() => {
+                        if (!selectedTemplateData) return;
+                        handleTemplateSelect(selectedTemplateData);
+                      }}
+                      className="w-full text-xs text-slate-500 hover:text-white"
                     >
                       Reset to Template Defaults
                     </Button>
@@ -733,7 +1019,7 @@ const FeaturedImageGenerator = () => {
 
               <Button
                 onClick={generateImage}
-                disabled={isGenerating || !mainText.trim()}
+                disabled={isGenerating || !selectedTemplateData}
                 className="w-full bg-white text-slate-900 hover:bg-slate-200"
               >
                 {isGenerating ? (
@@ -774,15 +1060,20 @@ const FeaturedImageGenerator = () => {
                 />
               ) : (
                 <div className="flex aspect-video items-center justify-center rounded-lg border border-dashed border-slate-600 bg-slate-900/30">
-                  <p className="text-sm text-slate-500">
-                    Your image will appear here
-                  </p>
+                  <p className="text-sm text-slate-500">Your image will appear here</p>
                 </div>
               )}
             </CardContent>
           </Card>
         </div>
       </div>
+
+      <IconPickerModal
+        open={isIconPickerOpen}
+        selectedIcon={iconName}
+        onClose={() => setIsIconPickerOpen(false)}
+        onSelect={(nextIcon) => setIconName(nextIcon)}
+      />
     </div>
   );
 };

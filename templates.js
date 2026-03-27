@@ -1,148 +1,175 @@
-import path from "path";
-import { fileURLToPath } from "url";
+function gradientCss(angle, startColor, endColor) {
+  return `linear-gradient(${angle}deg, ${startColor} 0%, ${endColor} 100%)`;
+}
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+function extractMainTextFontDefaults(fontString) {
+  const match = fontString.match(/^(.+?\s)?(\d+)px\s+(.+)$/);
+  if (!match) {
+    return {
+      mainTextFontFamily: "Arial, sans-serif",
+      mainTextFontSize: 56,
+    };
+  }
 
-/**
- * Template configurations for featured image generation
- * Each template defines layout, colors, fonts, and styling
- */
+  return {
+    mainTextFontFamily: match[3].trim(),
+    mainTextFontSize: parseInt(match[2], 10),
+  };
+}
+
+function makeTemplate({
+  id,
+  name,
+  description,
+  preview,
+  defaults,
+  config,
+  previewSeed,
+}) {
+  const fontDefaults = extractMainTextFontDefaults(config.mainTextField.font);
+  return {
+    id,
+    name,
+    description,
+    preview,
+    supportsIcon: true,
+    defaults: {
+      ...defaults,
+      mainTextFontFamily:
+        defaults.mainTextFontFamily || fontDefaults.mainTextFontFamily,
+      mainTextFontSize:
+        defaults.mainTextFontSize || fontDefaults.mainTextFontSize,
+    },
+    config,
+    previewSeed: {
+      ...previewSeed,
+      mainTextFontFamily:
+        previewSeed.mainTextFontFamily || fontDefaults.mainTextFontFamily,
+      mainTextFontSize:
+        previewSeed.mainTextFontSize || fontDefaults.mainTextFontSize,
+    },
+  };
+}
 
 export const templates = {
-  // Template 1: Classic - Clean centered banner with serif title
-  classic: {
+  classic: makeTemplate({
     id: "classic",
     name: "Classic",
-    description: "Clean centered banner with elegant serif typography",
+    description: "Clean centered panel with elegant typography",
     preview: {
       bgGradient: ["#e8e4df", "#d4cfc9"],
       accentColor: "#c67c4e",
     },
+    defaults: {
+      name: "HEALTH AND WELLNESS",
+      mainText: "How to Have a Better Work-Life Balance",
+      backgroundType: "color",
+      backgroundColor: "#e8e4df",
+      backgroundGradientCss: gradientCss(45, "#e8e4df", "#d4cfc9"),
+      surfaceColor: "#ffffff",
+      surfaceOpacity: 0.85,
+      primaryColor: "#c67c4e",
+      mainTextColor: "#1a1a1a",
+      iconSource: "lucide",
+      iconName: "sparkles",
+      iconColor: "#ffffff",
+      iconBackgroundColor: "#c67c4e",
+    },
+    previewSeed: {
+      name: "HEALTH AND WELLNESS",
+      mainText: "How to Have a Better Work-Life Balance",
+      backgroundType: "color",
+      backgroundColor: "#e8e4df",
+      backgroundGradientCss: gradientCss(45, "#e8e4df", "#d4cfc9"),
+      surfaceColor: "#ffffff",
+      surfaceOpacity: 0.85,
+      primaryColor: "#c67c4e",
+      mainTextColor: "#1a1a1a",
+      iconSource: "lucide",
+      iconName: "sparkles",
+      iconColor: "#ffffff",
+      iconBackgroundColor: "#c67c4e",
+    },
     config: {
       canvas: { width: 1200, height: 630 },
-      background: {
+      backgroundFallback: {
         type: "gradient",
-        gradient: {
-          type: "linear",
-          angle: 45,
-          stops: [
-            { offset: 0, color: "#e8e4df" },
-            { offset: 1, color: "#d4cfc9" },
-          ],
-        },
+        angle: 45,
+        startColor: "#e8e4df",
+        endColor: "#d4cfc9",
       },
-      banner: {
+      surface: {
         type: "centered",
         height: 340,
         padding: 100,
         defaultColor: "#ffffff",
         defaultOpacity: 0.85,
       },
-      category: {
+      icon: {
+        x: 554,
+        y: 68,
+        size: 92,
+        iconInset: 22,
+        borderColor: "#ffffff",
+        borderWidth: 4,
+      },
+      nameField: {
         font: "500 24px Arial, sans-serif",
         defaultColor: "#c67c4e",
         textTransform: "uppercase",
         letterSpacing: 4,
         offsetY: 70,
       },
-      title: {
-        font: "400 64px Georgia, Times New Roman, serif",
+      mainTextField: {
+        font: '400 64px "Playfair Display", Georgia, serif',
         defaultColor: "#1a1a1a",
         lineHeight: 80,
         offsetY: 80,
-        maxWidth: -160, // relative to banner width
+        maxWidth: -220,
       },
     },
-  },
-
-  // Template 2: Modern Dark - Bold dark theme with gradient accent
-  modernDark: {
-    id: "modernDark",
-    name: "Modern Dark",
-    description: "Bold dark theme with vibrant gradient accents",
-    preview: {
-      bgGradient: ["#1a1a2e", "#16213e"],
-      accentColor: "#e94560",
-    },
-    config: {
-      canvas: { width: 1200, height: 630 },
-      background: {
-        type: "gradient",
-        gradient: {
-          type: "linear",
-          angle: 135,
-          stops: [
-            { offset: 0, color: "#1a1a2e" },
-            { offset: 0.5, color: "#16213e" },
-            { offset: 1, color: "#0f3460" },
-          ],
-        },
-      },
-      decorations: [
-        {
-          type: "circle",
-          x: 1100,
-          y: 100,
-          radius: 200,
-          color: "rgba(233, 69, 96, 0.15)",
-        },
-        {
-          type: "circle",
-          x: 100,
-          y: 530,
-          radius: 150,
-          color: "rgba(233, 69, 96, 0.1)",
-        },
-      ],
-      banner: {
-        type: "left",
-        x: 80,
-        y: 120,
-        width: 700,
-        height: 390,
-        defaultColor: "#ffffff",
-        defaultOpacity: 0.05,
-        borderRadius: 20,
-        border: {
-          width: 2,
-          color: "rgba(233, 69, 96, 0.3)",
-        },
-      },
-      category: {
-        font: "700 18px Arial, sans-serif",
-        defaultColor: "#e94560",
-        textTransform: "uppercase",
-        letterSpacing: 6,
-        x: 120,
-        y: 180,
-        align: "left",
-      },
-      title: {
-        font: "700 52px Arial, sans-serif",
-        defaultColor: "#ffffff",
-        lineHeight: 68,
-        x: 120,
-        y: 260,
-        align: "left",
-        maxWidth: 620,
-      },
-    },
-  },
-
-  // Template 3: Minimal - Ultra clean with bottom accent bar
-  minimal: {
+  }),
+  minimal: makeTemplate({
     id: "minimal",
     name: "Minimal",
-    description: "Ultra clean design with subtle bottom accent",
+    description: "Clean editorial layout with subtle accents",
     preview: {
       bgGradient: ["#fafafa", "#f0f0f0"],
       accentColor: "#2563eb",
     },
+    defaults: {
+      name: "QUIET LUXURY",
+      mainText: "Simple design choices that still feel premium",
+      backgroundType: "color",
+      backgroundColor: "#fafafa",
+      backgroundGradientCss: gradientCss(135, "#fafafa", "#f0f0f0"),
+      surfaceColor: "#ffffff",
+      surfaceOpacity: 0,
+      primaryColor: "#2563eb",
+      mainTextColor: "#1f2937",
+      iconSource: "lucide",
+      iconName: "palette",
+      iconColor: "#ffffff",
+      iconBackgroundColor: "#2563eb",
+    },
+    previewSeed: {
+      name: "QUIET LUXURY",
+      mainText: "Simple design choices that still feel premium",
+      backgroundType: "color",
+      backgroundColor: "#fafafa",
+      surfaceColor: "#ffffff",
+      surfaceOpacity: 0,
+      primaryColor: "#2563eb",
+      mainTextColor: "#1f2937",
+      iconSource: "lucide",
+      iconName: "palette",
+      iconColor: "#ffffff",
+      iconBackgroundColor: "#2563eb",
+    },
     config: {
       canvas: { width: 1200, height: 630 },
-      background: {
-        type: "solid",
+      backgroundFallback: {
+        type: "color",
         color: "#fafafa",
       },
       decorations: [
@@ -152,7 +179,7 @@ export const templates = {
           y: 590,
           width: 1200,
           height: 40,
-          color: "#2563eb",
+          colorRole: "primaryColor",
         },
         {
           type: "line",
@@ -161,10 +188,18 @@ export const templates = {
           x2: 300,
           y2: 200,
           strokeWidth: 3,
-          color: "#2563eb",
+          colorRole: "primaryColor",
         },
       ],
-      category: {
+      icon: {
+        x: 556,
+        y: 72,
+        size: 88,
+        iconInset: 24,
+        borderColor: "#ffffff",
+        borderWidth: 0,
+      },
+      nameField: {
         font: "500 16px Arial, sans-serif",
         defaultColor: "#2563eb",
         textTransform: "uppercase",
@@ -173,40 +208,61 @@ export const templates = {
         y: 240,
         align: "left",
       },
-      title: {
-        font: "300 58px Georgia, serif",
+      mainTextField: {
+        font: "400 58px Lora, Georgia, serif",
         defaultColor: "#1f2937",
         lineHeight: 75,
         x: 100,
         y: 320,
         align: "left",
-        maxWidth: 900,
+        maxWidth: 860,
       },
     },
-  },
-
-  // Template 4: Vibrant - Colorful gradient with floating card
-  vibrant: {
+  }),
+  vibrant: makeTemplate({
     id: "vibrant",
     name: "Vibrant",
-    description: "Colorful gradient background with floating card",
+    description: "Colorful gradient background with a floating card",
     preview: {
-      bgGradient: ["#667eea", "#764ba2"],
+      bgGradient: ["#667eea", "#f093fb"],
       accentColor: "#fbbf24",
+    },
+    defaults: {
+      name: "CREATIVE SYSTEMS",
+      mainText: "Build a content engine that feels bright and human",
+      backgroundType: "gradient",
+      backgroundColor: "#667eea",
+      backgroundGradientCss: gradientCss(135, "#667eea", "#f093fb"),
+      surfaceColor: "#ffffff",
+      surfaceOpacity: 0.95,
+      primaryColor: "#7c3aed",
+      mainTextColor: "#1f2937",
+      iconSource: "lucide",
+      iconName: "star",
+      iconColor: "#ffffff",
+      iconBackgroundColor: "#f59e0b",
+    },
+    previewSeed: {
+      name: "CREATIVE SYSTEMS",
+      mainText: "Build a content engine that feels bright and human",
+      backgroundType: "gradient",
+      backgroundGradientCss: gradientCss(135, "#667eea", "#f093fb"),
+      surfaceColor: "#ffffff",
+      surfaceOpacity: 0.95,
+      primaryColor: "#7c3aed",
+      mainTextColor: "#1f2937",
+      iconSource: "lucide",
+      iconName: "star",
+      iconColor: "#ffffff",
+      iconBackgroundColor: "#f59e0b",
     },
     config: {
       canvas: { width: 1200, height: 630 },
-      background: {
+      backgroundFallback: {
         type: "gradient",
-        gradient: {
-          type: "linear",
-          angle: 135,
-          stops: [
-            { offset: 0, color: "#667eea" },
-            { offset: 0.5, color: "#764ba2" },
-            { offset: 1, color: "#f093fb" },
-          ],
-        },
+        angle: 135,
+        startColor: "#667eea",
+        endColor: "#f093fb",
       },
       decorations: [
         {
@@ -231,7 +287,7 @@ export const templates = {
           color: "rgba(255, 255, 255, 0.15)",
         },
       ],
-      banner: {
+      surface: {
         type: "floating",
         x: 100,
         y: 115,
@@ -246,7 +302,15 @@ export const templates = {
           offsetY: 20,
         },
       },
-      category: {
+      icon: {
+        x: 551,
+        y: 58,
+        size: 98,
+        iconInset: 22,
+        borderColor: "rgba(255,255,255,0.5)",
+        borderWidth: 3,
+      },
+      nameField: {
         font: "700 16px Arial, sans-serif",
         defaultColor: "#7c3aed",
         textTransform: "uppercase",
@@ -256,115 +320,64 @@ export const templates = {
         badge: {
           enabled: true,
           padding: { x: 20, y: 10 },
-          color: "rgba(124, 58, 237, 0.1)",
+          colorRole: "primaryColorSoft",
           borderRadius: 20,
         },
       },
-      title: {
-        font: "700 54px Arial, sans-serif",
+      mainTextField: {
+        font: "700 54px Montserrat, Arial, sans-serif",
         defaultColor: "#1f2937",
         lineHeight: 70,
         y: 290,
         align: "center",
-        maxWidth: 800,
+        maxWidth: 760,
       },
     },
-  },
-
-  // Template 5: Editorial - Magazine-style with large typography
-  editorial: {
-    id: "editorial",
-    name: "Editorial",
-    description: "Magazine-style layout with bold typography",
-    preview: {
-      bgGradient: ["#fef3e2", "#fde8d0"],
-      accentColor: "#ea580c",
-    },
-    config: {
-      canvas: { width: 1200, height: 630 },
-      background: {
-        type: "gradient",
-        gradient: {
-          type: "linear",
-          angle: 180,
-          stops: [
-            { offset: 0, color: "#fef3e2" },
-            { offset: 1, color: "#fde8d0" },
-          ],
-        },
-      },
-      decorations: [
-        {
-          type: "rect",
-          x: 0,
-          y: 0,
-          width: 12,
-          height: 630,
-          color: "#ea580c",
-        },
-        {
-          type: "line",
-          x1: 80,
-          y1: 550,
-          x2: 400,
-          y2: 550,
-          strokeWidth: 2,
-          color: "#ea580c",
-        },
-      ],
-      category: {
-        font: "400 14px Georgia, serif",
-        defaultColor: "#ea580c",
-        textTransform: "uppercase",
-        letterSpacing: 10,
-        x: 80,
-        y: 120,
-        align: "left",
-      },
-      title: {
-        font: "400 72px Georgia, serif",
-        defaultColor: "#292524",
-        lineHeight: 85,
-        x: 80,
-        y: 200,
-        align: "left",
-        maxWidth: 1000,
-        style: "italic",
-      },
-      subtitle: {
-        enabled: true,
-        font: "400 20px Georgia, serif",
-        color: "#78716c",
-        x: 80,
-        y: 570,
-        align: "left",
-        text: "Featured Article",
-      },
-    },
-  },
-
-  // Template 6: Social Message - Social post card with avatar support
-  socialMessage: {
+  }),
+  socialMessage: makeTemplate({
     id: "socialMessage",
     name: "Social Message",
-    description: "Polished social card layout with avatar and message styling",
+    description: "Social media-inspired message card with profile accent",
     preview: {
-      bgGradient: ["#0f172a", "#3b82f6"],
+      bgGradient: ["#0f172a", "#60a5fa"],
       accentColor: "#2563eb",
+    },
+    defaults: {
+      name: "@dailygrace",
+      mainText: "Small reminders can reset the whole tone of your day.",
+      backgroundType: "gradient",
+      backgroundColor: "#0f172a",
+      backgroundGradientCss: gradientCss(140, "#0f172a", "#60a5fa"),
+      surfaceColor: "#ffffff",
+      surfaceOpacity: 0.97,
+      primaryColor: "#2563eb",
+      mainTextColor: "#1e293b",
+      iconSource: "lucide",
+      iconName: "sparkles",
+      iconColor: "#ffffff",
+      iconBackgroundColor: "#2563eb",
+    },
+    previewSeed: {
+      name: "@dailygrace",
+      mainText: "Small reminders can reset the whole tone of your day.",
+      backgroundType: "gradient",
+      backgroundGradientCss: gradientCss(140, "#0f172a", "#60a5fa"),
+      surfaceColor: "#ffffff",
+      surfaceOpacity: 0.97,
+      primaryColor: "#2563eb",
+      mainTextColor: "#1e293b",
+      iconSource: "lucide",
+      iconName: "sparkles",
+      iconColor: "#ffffff",
+      iconBackgroundColor: "#2563eb",
     },
     config: {
       canvas: { width: 1200, height: 630 },
-      background: {
+      backgroundFallback: {
         type: "gradient",
-        gradient: {
-          type: "linear",
-          angle: 140,
-          stops: [
-            { offset: 0, color: "#0f172a" },
-            { offset: 0.55, color: "#1d4ed8" },
-            { offset: 1, color: "#60a5fa" },
-          ],
-        },
+        angle: 140,
+        startColor: "#0f172a",
+        endColor: "#60a5fa",
       },
       decorations: [
         {
@@ -382,7 +395,7 @@ export const templates = {
           color: "rgba(255, 255, 255, 0.08)",
         },
       ],
-      banner: {
+      surface: {
         type: "floating",
         x: 90,
         y: 75,
@@ -397,13 +410,11 @@ export const templates = {
           offsetY: 24,
         },
       },
-      avatar: {
-        x: 150,
-        y: 140,
-        size: 110,
-        defaultPreset: "user",
-        backgroundColor: "#2563eb",
-        iconColor: "#ffffff",
+      icon: {
+        x: 188,
+        y: 136,
+        size: 112,
+        iconInset: 28,
         borderColor: "#ffffff",
         borderWidth: 8,
         shadow: {
@@ -412,15 +423,15 @@ export const templates = {
           offsetY: 12,
         },
       },
-      category: {
+      nameField: {
         font: "700 30px Arial, sans-serif",
-        defaultColor: "#0f172a",
-        x: 300,
+        defaultColor: "#2563eb",
+        x: 314,
         y: 190,
         align: "left",
       },
-      title: {
-        font: "400 56px Arial, sans-serif",
+      mainTextField: {
+        font: '400 56px "DM Sans", Arial, sans-serif',
         defaultColor: "#1e293b",
         lineHeight: 66,
         x: 150,
@@ -440,79 +451,154 @@ export const templates = {
         text: "Reply  •  Share  •  Save",
       },
     },
-  },
-
-  // Template 7: Prayer Cover - Classic style with prayer background image
-  prayerCover: {
-    id: "prayerCover",
-    name: "Prayer Cover",
-    description:
-      "Spiritual themed cover with soft pink-cyan gradient background",
+  }),
+  angledFrame: makeTemplate({
+    id: "angledFrame",
+    name: "Angled Frame",
+    description: "Sharp geometric banner with a slanted content panel",
     preview: {
-      bgGradient: ["#7dd3fc", "#f9a8d4"],
-      accentColor: "#be185d",
+      bgGradient: ["#2f3f93", "#000000"],
+      accentColor: "#2f3f93",
+    },
+    defaults: {
+      name: "MARKETING INSIGHT",
+      mainText: "Turn one strong message into a design system that scales.",
+      backgroundType: "color",
+      backgroundColor: "#000000",
+      backgroundGradientCss: gradientCss(120, "#2f3f93", "#000000"),
+      surfaceColor: "#d7e8f6",
+      surfaceOpacity: 1,
+      primaryColor: "#2f3f93",
+      mainTextColor: "#10233f",
+      iconSource: "lucide",
+      iconName: "megaphone",
+      iconColor: "#ffffff",
+      iconBackgroundColor: "#2f3f93",
+    },
+    previewSeed: {
+      name: "MARKETING INSIGHT",
+      mainText: "Turn one strong message into a design system that scales.",
+      backgroundType: "color",
+      backgroundColor: "#000000",
+      surfaceColor: "#d7e8f6",
+      surfaceOpacity: 1,
+      primaryColor: "#2f3f93",
+      mainTextColor: "#10233f",
+      iconSource: "lucide",
+      iconName: "megaphone",
+      iconColor: "#ffffff",
+      iconBackgroundColor: "#2f3f93",
     },
     config: {
       canvas: { width: 1200, height: 630 },
-      background: {
-        type: "image",
-        imagePath: path.join(__dirname, "assets", "prayer-bg.png"),
+      backgroundFallback: {
+        type: "color",
+        color: "#000000",
       },
-      banner: {
-        type: "centered",
-        height: 340,
-        padding: 100,
-        defaultColor: "#ffffff",
-        defaultOpacity: 0.9,
+      backgroundImagePlacement: {
+        x: 600,
+        y: 0,
+        width: 600,
+        height: 630,
+        fit: "cover",
+        alignX: "center",
+        alignY: "center",
       },
-      category: {
-        font: "500 24px Arial, sans-serif",
-        defaultColor: "#be185d",
+      decorations: [
+        {
+          type: "rect",
+          x: 0,
+          y: 0,
+          width: 740,
+          height: 78,
+          colorRole: "primaryColor",
+        },
+        {
+          type: "rect",
+          x: 0,
+          y: 552,
+          width: 600,
+          height: 78,
+          colorRole: "primaryColor",
+        },
+        {
+          type: "polygon",
+          points: [
+            { x: 730, y: 0 },
+            { x: 760, y: 0 },
+            { x: 615, y: 630 },
+            { x: 585, y: 630 },
+          ],
+          color: "#ffffff",
+        },
+        {
+          type: "polygon",
+          points: [
+            { x: 0, y: 76 },
+            { x: 830, y: 76 },
+            { x: 700, y: 554 },
+            { x: 0, y: 554 },
+          ],
+          color: "#d7e8f6",
+        },
+        {
+          type: "line",
+          x1: 28,
+          y1: 28,
+          x2: 1196,
+          y2: 28,
+          strokeWidth: 5,
+          color: "#ffffff",
+        },
+        {
+          type: "line",
+          x1: 28,
+          y1: 28,
+          x2: 28,
+          y2: 596,
+          strokeWidth: 5,
+          color: "#ffffff",
+        },
+        {
+          type: "line",
+          x1: 600,
+          y1: 596,
+          x2: 1196,
+          y2: 596,
+          strokeWidth: 5,
+          color: "#ffffff",
+        },
+      ],
+      icon: {
+        x: 554,
+        y: 66,
+        size: 92,
+        iconInset: 22,
+        borderColor: "#ffffff",
+        borderWidth: 4,
+      },
+      nameField: {
+        font: "700 22px Arial, sans-serif",
+        defaultColor: "#2f3f93",
         textTransform: "uppercase",
         letterSpacing: 4,
-        offsetY: 70,
+        x: 88,
+        y: 145,
+        align: "left",
       },
-      title: {
-        font: "400 64px Georgia, Times New Roman, serif",
-        defaultColor: "#1e293b",
-        lineHeight: 80,
-        offsetY: 80,
-        maxWidth: -160,
+      mainTextField: {
+        font: "700 62px Poppins, Arial, sans-serif",
+        defaultColor: "#10233f",
+        lineHeight: 72,
+        x: 88,
+        y: 220,
+        align: "left",
+        maxWidth: 455,
+        maxLines: 4,
+        minScale: 0.5,
       },
     },
-  },
-};
-
-const templatePreviewSeeds = {
-  classic: {
-    categoryText: "HEALTH AND WELLNESS",
-    mainText: "How to Have a Better Work-Life Balance",
-  },
-  modernDark: {
-    categoryText: "TREND REPORT",
-    mainText: "What Creators Need to Know Before the Next Big Shift",
-  },
-  minimal: {
-    categoryText: "QUIET LUXURY",
-    mainText: "Simple design choices that still feel premium",
-  },
-  vibrant: {
-    categoryText: "CREATIVE SYSTEMS",
-    mainText: "Build a content engine that feels bright and human",
-  },
-  editorial: {
-    categoryText: "FEATURED STORY",
-    mainText: "The subtle details that make a layout feel intentional",
-  },
-  socialMessage: {
-    categoryText: "@dailygrace",
-    mainText: "Small reminders can reset the whole tone of your day.",
-    avatarIcon: "sparkles",
-  },
-  prayerCover: {
-    categoryText: "MORNING PRAYER",
-    mainText: "A quiet start can carry peace through the whole day",
-  },
+  }),
 };
 
 export const getTemplate = (templateId) => {
@@ -520,19 +606,19 @@ export const getTemplate = (templateId) => {
 };
 
 export const getTemplatePreviewSeed = (templateId) => {
-  return (
-    templatePreviewSeeds[templateId] || {
-      categoryText: "FEATURED",
-      mainText: "Create a polished image in seconds",
-    }
-  );
+  const template = getTemplate(templateId);
+  return template.previewSeed || template.defaults;
 };
 
 export const getTemplateList = () => {
-  return Object.values(templates).map(({ id, name, description, preview }) => ({
-    id,
-    name,
-    description,
-    preview,
-  }));
+  return Object.values(templates).map(
+    ({ id, name, description, preview, supportsIcon, defaults }) => ({
+      id,
+      name,
+      description,
+      preview,
+      supportsIcon,
+      defaults,
+    })
+  );
 };
