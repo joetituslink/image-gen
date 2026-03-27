@@ -1,4 +1,12 @@
-import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  startTransition,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Download, Image, Loader2, Palette, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -52,6 +60,18 @@ interface Template {
   supportsIcon: boolean;
 }
 
+interface TemplateSelectorProps {
+  onSelect: (template: Template) => void;
+  selectedTemplate: string;
+  selectedTemplateName?: string;
+  templates: Template[];
+}
+
+interface PreviewPanelProps {
+  generatedImage: string | null;
+  onDownload: () => void;
+}
+
 function parseLinearGradientCss(input: string) {
   const match = input.match(
     /^linear-gradient\(\s*(-?\d+(?:\.\d+)?)deg\s*,\s*([^,]+?)\s+0%\s*,\s*([^,]+?)\s+100%\s*\)$/i
@@ -68,6 +88,128 @@ function parseLinearGradientCss(input: string) {
 function buildGradientCss(angle: number, startColor: string, endColor: string) {
   return `linear-gradient(${angle}deg, ${startColor} 0%, ${endColor} 100%)`;
 }
+
+function fileToDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error("Failed to read file"));
+    reader.readAsDataURL(file);
+  });
+}
+
+const TemplateSelector = memo(function TemplateSelector({
+  onSelect,
+  selectedTemplate,
+  selectedTemplateName,
+  templates,
+}: TemplateSelectorProps) {
+  return (
+    <div className="space-y-4 [contain:layout_paint]">
+      <div className="flex items-center justify-between gap-3">
+        <Label className="text-lg font-semibold text-white">Choose a Template</Label>
+        <span className="text-sm text-slate-400">{selectedTemplateName || "Select"}</span>
+      </div>
+      <div className="overflow-x-auto pb-1 [scrollbar-width:thin]">
+        <div className="flex min-w-max gap-2">
+          {templates.map((template) => (
+            <button
+              key={`compact-${template.id}`}
+              type="button"
+              onClick={() => onSelect(template)}
+              className={`rounded-full border px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors ${
+                selectedTemplate === template.id
+                  ? "border-white bg-white text-slate-900"
+                  : "border-slate-600 bg-slate-900/60 text-slate-300 hover:border-slate-400 hover:text-white"
+              }`}
+            >
+              {template.name}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
+        {templates.map((template) => (
+          <button
+            key={template.id}
+            type="button"
+            onClick={() => onSelect(template)}
+            className={`group overflow-hidden rounded-xl border-2 transition-colors ${
+              selectedTemplate === template.id
+                ? "border-white bg-slate-900"
+                : "border-slate-700 bg-slate-900/70 hover:border-slate-500"
+            }`}
+          >
+            <div className="aspect-video w-full">
+              {template.previewImageUrl ? (
+                <img
+                  src={template.previewImageUrl}
+                  alt={`${template.name} preview`}
+                  className="h-full w-full object-cover"
+                  loading="lazy"
+                  decoding="async"
+                />
+              ) : (
+                <div
+                  className="h-full w-full"
+                  style={{
+                    background: `linear-gradient(135deg, ${template.preview.bgGradient[0]}, ${template.preview.bgGradient[1] || template.preview.bgGradient[0]})`,
+                  }}
+                />
+              )}
+            </div>
+            <div className="bg-slate-800/95 p-3 text-left">
+              <h3 className="text-sm font-semibold text-white">{template.name}</h3>
+              <p className="mt-0.5 line-clamp-1 text-xs text-slate-400">
+                {template.description}
+              </p>
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+});
+
+const PreviewPanel = memo(function PreviewPanel({
+  generatedImage,
+  onDownload,
+}: PreviewPanelProps) {
+  return (
+    <Card className="border-slate-700 bg-slate-800/40 [contain:layout_paint]">
+      <CardHeader>
+        <CardTitle className="flex items-center justify-between text-white">
+          <span>Preview</span>
+          {generatedImage && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onDownload}
+              className="border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-white"
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Download
+            </Button>
+          )}
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {generatedImage ? (
+          <img
+            src={generatedImage}
+            alt="Generated featured image"
+            className="w-full rounded-lg border border-slate-600 shadow-lg"
+            decoding="async"
+          />
+        ) : (
+          <div className="flex aspect-video items-center justify-center rounded-lg border border-dashed border-slate-600 bg-slate-900/30">
+            <p className="text-sm text-slate-500">Your image will appear here</p>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+});
 
 const FeaturedImageGenerator = () => {
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -102,12 +244,30 @@ const FeaturedImageGenerator = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isIconPickerOpen, setIsIconPickerOpen] = useState(false);
   const backgroundInputRef = useRef<HTMLInputElement>(null);
+  const backgroundImageBase64Ref = useRef<string | null>(null);
   const iconInputRef = useRef<HTMLInputElement>(null);
+  const iconImageBase64Ref = useRef<string | null>(null);
 
   const selectedTemplateData = useMemo(
     () => templates.find((template) => template.id === selectedTemplate) ?? null,
     [selectedTemplate, templates]
   );
+
+  useEffect(() => {
+    return () => {
+      if (backgroundImage) {
+        URL.revokeObjectURL(backgroundImage);
+      }
+    };
+  }, [backgroundImage]);
+
+  useEffect(() => {
+    return () => {
+      if (iconImage) {
+        URL.revokeObjectURL(iconImage);
+      }
+    };
+  }, [iconImage]);
 
   const applyTemplateDefaults = useCallback((template: Template) => {
     setSelectedTemplate(template.id);
@@ -123,6 +283,7 @@ const FeaturedImageGenerator = () => {
       setGradientEndColor(parsedGradient.endColor);
     }
     setBackgroundImage(null);
+    backgroundImageBase64Ref.current = null;
     setBackgroundImageZoom(1);
     setBackgroundImageOffsetX(0);
     setBackgroundImageOffsetY(0);
@@ -130,6 +291,7 @@ const FeaturedImageGenerator = () => {
     setIconSource(template.defaults.iconSource);
     setIconName(template.defaults.iconName);
     setIconImage(null);
+    iconImageBase64Ref.current = null;
     if (iconInputRef.current) iconInputRef.current.value = "";
     setIconColor(template.defaults.iconColor);
     setIconBackgroundColor(template.defaults.iconBackgroundColor);
@@ -222,40 +384,64 @@ const FeaturedImageGenerator = () => {
   }, []);
 
   const handleBackgroundUpload = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>) => {
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
       if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (loadEvent) => {
-        setBackgroundImage(loadEvent.target?.result as string);
+      const nextPreviewUrl = URL.createObjectURL(file);
+      try {
+        const nextBase64 = await fileToDataUrl(file);
+        setBackgroundImage((currentImage) => {
+          if (currentImage) {
+            URL.revokeObjectURL(currentImage);
+          }
+          return nextPreviewUrl;
+        });
+        backgroundImageBase64Ref.current = nextBase64;
         setBackgroundType("image");
         setBackgroundImageZoom(1);
         setBackgroundImageOffsetX(0);
         setBackgroundImageOffsetY(0);
         toast.success("Background image uploaded");
-      };
-      reader.readAsDataURL(file);
+      } catch (error) {
+        URL.revokeObjectURL(nextPreviewUrl);
+        toast.error(error instanceof Error ? error.message : "Failed to upload image");
+      }
     },
     []
   );
 
   const handleIconUpload = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>) => {
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
       if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (loadEvent) => {
-        setIconImage(loadEvent.target?.result as string);
+      const nextPreviewUrl = URL.createObjectURL(file);
+      try {
+        const nextBase64 = await fileToDataUrl(file);
+        setIconImage((currentImage) => {
+          if (currentImage) {
+            URL.revokeObjectURL(currentImage);
+          }
+          return nextPreviewUrl;
+        });
+        iconImageBase64Ref.current = nextBase64;
         setIconSource("image");
         toast.success("Icon image uploaded");
-      };
-      reader.readAsDataURL(file);
+      } catch (error) {
+        URL.revokeObjectURL(nextPreviewUrl);
+        toast.error(error instanceof Error ? error.message : "Failed to upload icon");
+      }
     },
     []
   );
 
   const clearBackgroundImage = useCallback(() => {
-    setBackgroundImage(null);
+    setBackgroundImage((currentImage) => {
+      if (currentImage) {
+        URL.revokeObjectURL(currentImage);
+      }
+      return null;
+    });
+    backgroundImageBase64Ref.current = null;
     setBackgroundImageZoom(1);
     setBackgroundImageOffsetX(0);
     setBackgroundImageOffsetY(0);
@@ -263,7 +449,13 @@ const FeaturedImageGenerator = () => {
   }, []);
 
   const clearIconImage = useCallback(() => {
-    setIconImage(null);
+    setIconImage((currentImage) => {
+      if (currentImage) {
+        URL.revokeObjectURL(currentImage);
+      }
+      return null;
+    });
+    iconImageBase64Ref.current = null;
     if (iconInputRef.current) iconInputRef.current.value = "";
   }, []);
 
@@ -284,7 +476,7 @@ const FeaturedImageGenerator = () => {
       toast.error("Main text must be 70 characters or fewer");
       return;
     }
-    if (backgroundType === "image" && !backgroundImage) {
+    if (backgroundType === "image" && !backgroundImageBase64Ref.current) {
       toast.error("Upload a background image to use image mode");
       return;
     }
@@ -292,7 +484,7 @@ const FeaturedImageGenerator = () => {
       toast.error("Use a valid linear-gradient value for the background");
       return;
     }
-    if (iconSource === "image" && !iconImage) {
+    if (iconSource === "image" && !iconImageBase64Ref.current) {
       toast.error("Upload an icon image or switch icon mode");
       return;
     }
@@ -319,7 +511,7 @@ const FeaturedImageGenerator = () => {
       } else if (backgroundType === "gradient") {
         body.backgroundGradientCss = backgroundGradientCss;
       } else {
-        body.backgroundImageBase64 = backgroundImage;
+        body.backgroundImageBase64 = backgroundImageBase64Ref.current;
         body.backgroundImageZoom = backgroundImageZoom;
         body.backgroundImageOffsetX = backgroundImageOffsetX;
         body.backgroundImageOffsetY = backgroundImageOffsetY;
@@ -330,7 +522,7 @@ const FeaturedImageGenerator = () => {
         body.iconColor = iconColor;
         body.iconBackgroundColor = iconBackgroundColor;
       } else if (iconSource === "image") {
-        body.iconImageBase64 = iconImage;
+        body.iconImageBase64 = iconImageBase64Ref.current;
       }
 
       const response = await fetch(`${API_URL}/api/generate-image`, {
@@ -360,14 +552,12 @@ const FeaturedImageGenerator = () => {
   }, [
     backgroundColor,
     backgroundGradientCss,
-    backgroundImage,
     backgroundImageOffsetX,
     backgroundImageOffsetY,
     backgroundImageZoom,
     backgroundType,
     iconBackgroundColor,
     iconColor,
-    iconImage,
     iconName,
     iconSource,
     mainText,
@@ -408,73 +598,15 @@ const FeaturedImageGenerator = () => {
           <p className="text-lg text-slate-400">{APP_DESCRIPTION}</p>
         </header>
 
-        <div className="space-y-4">
-          <div className="flex items-center justify-between gap-3">
-            <Label className="text-lg font-semibold text-white">Choose a Template</Label>
-            <span className="text-sm text-slate-400">
-              {selectedTemplateData?.name || "Select"}
-            </span>
-          </div>
-          <div className="overflow-x-auto pb-1">
-            <div className="flex min-w-max gap-2">
-              {templates.map((template) => (
-                <button
-                  key={`compact-${template.id}`}
-                  type="button"
-                  onClick={() => handleTemplateSelect(template)}
-                  className={`rounded-full border px-4 py-2 text-sm font-medium whitespace-nowrap transition ${
-                    selectedTemplate === template.id
-                      ? "border-white bg-white text-slate-900 shadow-lg shadow-white/10"
-                      : "border-slate-600 bg-slate-900/60 text-slate-300 hover:border-slate-400 hover:text-white"
-                  }`}
-                >
-                  {template.name}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
-            {templates.map((template) => (
-              <button
-                key={template.id}
-                type="button"
-                onClick={() => handleTemplateSelect(template)}
-                className={`group overflow-hidden rounded-xl border-2 transition-all duration-300 ${
-                  selectedTemplate === template.id
-                    ? "scale-105 border-white shadow-lg shadow-white/20"
-                    : "border-slate-600 hover:border-slate-400"
-                }`}
-              >
-                <div className="aspect-video w-full">
-                  {template.previewImageUrl ? (
-                    <img
-                      src={template.previewImageUrl}
-                      alt={`${template.name} preview`}
-                      className="h-full w-full object-cover"
-                      loading="lazy"
-                    />
-                  ) : (
-                    <div
-                      className="h-full w-full"
-                      style={{
-                        background: `linear-gradient(135deg, ${template.preview.bgGradient[0]}, ${template.preview.bgGradient[1] || template.preview.bgGradient[0]})`,
-                      }}
-                    />
-                  )}
-                </div>
-                <div className="bg-slate-800 p-3 text-left">
-                  <h3 className="text-sm font-semibold text-white">{template.name}</h3>
-                  <p className="mt-0.5 line-clamp-1 text-xs text-slate-400">
-                    {template.description}
-                  </p>
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
+        <TemplateSelector
+          templates={templates}
+          selectedTemplate={selectedTemplate}
+          selectedTemplateName={selectedTemplateData?.name}
+          onSelect={handleTemplateSelect}
+        />
 
         <div className="grid gap-6 lg:grid-cols-2">
-          <Card className="border-slate-700 bg-slate-800/50 backdrop-blur">
+          <Card className="border-slate-700 bg-slate-800/40 [contain:layout_paint]">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-white">
                 <Image className="h-5 w-5" />
@@ -719,6 +851,7 @@ const FeaturedImageGenerator = () => {
                           src={backgroundImage}
                           alt="Background preview"
                           className="h-28 w-full rounded-xl border border-slate-700 object-contain bg-slate-950/60"
+                          decoding="async"
                         />
                         <div className="space-y-3 rounded-xl border border-slate-700 bg-slate-950/50 p-3">
                           <div className="space-y-2">
@@ -913,6 +1046,7 @@ const FeaturedImageGenerator = () => {
                           src={iconImage}
                           alt="Icon preview"
                           className="h-24 w-24 rounded-2xl border border-slate-700 object-contain bg-slate-950/60"
+                          decoding="async"
                         />
                       )}
                     </div>
@@ -1034,37 +1168,7 @@ const FeaturedImageGenerator = () => {
             </CardContent>
           </Card>
 
-          <Card className="border-slate-700 bg-slate-800/50 backdrop-blur">
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between text-white">
-                <span>Preview</span>
-                {generatedImage && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={downloadImage}
-                    className="border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-white"
-                  >
-                    <Download className="mr-2 h-4 w-4" />
-                    Download
-                  </Button>
-                )}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {generatedImage ? (
-                <img
-                  src={generatedImage}
-                  alt="Generated featured image"
-                  className="w-full rounded-lg border border-slate-600 shadow-lg"
-                />
-              ) : (
-                <div className="flex aspect-video items-center justify-center rounded-lg border border-dashed border-slate-600 bg-slate-900/30">
-                  <p className="text-sm text-slate-500">Your image will appear here</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <PreviewPanel generatedImage={generatedImage} onDownload={downloadImage} />
         </div>
       </div>
 
