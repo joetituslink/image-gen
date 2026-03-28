@@ -159,6 +159,7 @@ function drawGradientBackground(ctx, canvas, backgroundGradient) {
 }
 
 async function drawContainedImage(ctx, canvas, imageSource, placement) {
+  if (!imageSource) return;
   const image = await loadImage(imageSource);
   const targetX = placement?.x ?? 0;
   const targetY = placement?.y ?? 0;
@@ -215,7 +216,7 @@ async function drawBackground(
     await drawContainedImage(
       ctx,
       canvas,
-      backgroundInput.imageBase64,
+      backgroundInput.image,
       {
         ...backgroundImagePlacement,
         zoom: backgroundInput.zoom,
@@ -525,7 +526,7 @@ async function drawIcon(
   iconConfig,
   iconSource,
   iconName,
-  iconImageBase64,
+  iconImage,
   iconColor,
   iconBackgroundColor,
   primaryColor
@@ -558,8 +559,8 @@ async function drawIcon(
   ctx.fill();
   ctx.clip();
 
-  if (iconSource === "image" && iconImageBase64) {
-    const image = await loadImage(iconImageBase64);
+  if (iconSource === "image" && iconImage) {
+    const image = await loadImage(iconImage);
     const scale = Math.max(size / image.width, size / image.height);
     const drawWidth = image.width * scale;
     const drawHeight = image.height * scale;
@@ -585,6 +586,49 @@ async function drawIcon(
     ctx.stroke();
     ctx.restore();
   }
+}
+
+function resolveIconConfig(
+  iconConfig,
+  canvas,
+  iconPositionX,
+  iconPositionY,
+  iconScale
+) {
+  if (!iconConfig) return iconConfig;
+
+  const safeScale = Number.isFinite(iconScale) && iconScale > 0 ? iconScale : 1;
+  const baseSize = iconConfig.size;
+  const nextSize = baseSize * safeScale;
+  const defaultCenterX = iconConfig.x + baseSize / 2;
+  const defaultCenterY = iconConfig.y + baseSize / 2;
+  const centerX =
+    Number.isFinite(iconPositionX) && canvas?.width
+      ? (iconPositionX / 100) * canvas.width
+      : defaultCenterX;
+  const centerY =
+    Number.isFinite(iconPositionY) && canvas?.height
+      ? (iconPositionY / 100) * canvas.height
+      : defaultCenterY;
+
+  return {
+    ...iconConfig,
+    x: centerX - nextSize / 2,
+    y: centerY - nextSize / 2,
+    size: nextSize,
+    iconInset: (iconConfig.iconInset ?? 20) * safeScale,
+    borderWidth:
+      iconConfig.borderWidth !== undefined
+        ? iconConfig.borderWidth * safeScale
+        : iconConfig.borderWidth,
+    shadow: iconConfig.shadow
+      ? {
+          ...iconConfig.shadow,
+          blur: (iconConfig.shadow.blur || 0) * safeScale,
+          offsetY: (iconConfig.shadow.offsetY || 0) * safeScale,
+        }
+      : iconConfig.shadow,
+  };
 }
 
 function drawNameText(
@@ -660,6 +704,7 @@ function drawMainText(
   mainText,
   mainTextColor,
   mainTextFontFamily,
+  mainTextFontWeight,
   mainTextFontSize,
   surfaceBounds,
   nameY
@@ -675,7 +720,13 @@ function drawMainText(
   if (mainTextFontFamily) {
     font = setFontFamily(font, mainTextFontFamily);
   }
-  font = setFontWeight(font, mainTextConfig.fontWeight || 700);
+  const resolvedFontWeight =
+    mainTextFontWeight === "normal"
+      ? 400
+      : mainTextFontWeight === "bold"
+        ? 700
+        : mainTextConfig.fontWeight || 700;
+  font = setFontWeight(font, resolvedFontWeight);
   if (mainTextFontSize) {
     font = setFontSize(font, mainTextFontSize);
   }
@@ -869,14 +920,17 @@ function resolveRenderConfig(template, flipBackgroundPosition) {
   };
 }
 
-export async function generateImage({
+export async function renderImageBuffer({
   templateId = "classic",
   name,
   mainText,
   background,
   iconSource = "none",
   iconName,
-  iconImageBase64,
+  iconImage,
+  iconPositionX,
+  iconPositionY,
+  iconScale = 1,
   iconColor,
   iconBackgroundColor,
   surfaceColor,
@@ -884,10 +938,9 @@ export async function generateImage({
   primaryColor,
   mainTextColor,
   mainTextFontFamily,
+  mainTextFontWeight,
   mainTextFontSize,
   flipBackgroundPosition = false,
-  outputFilename,
-  outputDir,
 }) {
   const template = getTemplate(templateId);
   const config = resolveRenderConfig(template, flipBackgroundPosition);
@@ -915,12 +968,19 @@ export async function generateImage({
     surfaceColor,
     surfaceOpacity
   );
+  const resolvedIconConfig = resolveIconConfig(
+    config.icon,
+    canvas,
+    iconPositionX,
+    iconPositionY,
+    iconScale
+  );
   await drawIcon(
     ctx,
-    config.icon,
+    resolvedIconConfig,
     iconSource,
     iconName,
-    iconImageBase64,
+    iconImage,
     iconColor,
     iconBackgroundColor,
     primaryColor
@@ -940,11 +1000,62 @@ export async function generateImage({
     mainText,
     mainTextColor,
     mainTextFontFamily,
+    mainTextFontWeight,
     mainTextFontSize,
     surfaceBounds,
     nameY
   );
   drawSubtitle(ctx, config.subtitle);
+
+  return canvas.toBuffer("image/webp", 80);
+}
+
+export async function generateImage({
+  templateId = "classic",
+  name,
+  mainText,
+  background,
+  iconSource = "none",
+  iconName,
+  iconImage,
+  iconPositionX,
+  iconPositionY,
+  iconScale = 1,
+  iconColor,
+  iconBackgroundColor,
+  surfaceColor,
+  surfaceOpacity,
+  primaryColor,
+  mainTextColor,
+  mainTextFontFamily,
+  mainTextFontWeight,
+  mainTextFontSize,
+  flipBackgroundPosition = false,
+  outputFilename,
+  outputDir,
+}) {
+  const buffer = await renderImageBuffer({
+    templateId,
+    name,
+    mainText,
+    background,
+    iconSource,
+    iconName,
+    iconImage,
+    iconPositionX,
+    iconPositionY,
+    iconScale,
+    iconColor,
+    iconBackgroundColor,
+    surfaceColor,
+    surfaceOpacity,
+    primaryColor,
+    mainTextColor,
+    mainTextFontFamily,
+    mainTextFontWeight,
+    mainTextFontSize,
+    flipBackgroundPosition,
+  });
 
   const targetDir = outputDir || generatedDir;
   if (!fs.existsSync(targetDir)) {
@@ -953,7 +1064,6 @@ export async function generateImage({
 
   const filename = outputFilename || `featured-image-${Date.now()}.webp`;
   const filepath = path.join(targetDir, filename);
-  const buffer = canvas.toBuffer("image/webp", 80);
   fs.writeFileSync(filepath, buffer);
 
   return {

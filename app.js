@@ -1,9 +1,11 @@
-import express from "express";
 import cors from "cors";
-import path from "path";
+import express from "express";
 import fs from "fs";
+import multer from "multer";
+import path from "path";
+import { randomUUID } from "crypto";
 import { fileURLToPath } from "url";
-import { generateImage } from "./generateImage.js";
+import { generateImage, renderImageBuffer } from "./generateImage.js";
 import { curatedLucideIconNameSet } from "./shared/iconCatalog.js";
 import { mainTextFontFamilies } from "./shared/fontCatalog.js";
 import { getTemplate, getTemplateList, getTemplatePreviewSeed } from "./templates.js";
@@ -30,10 +32,10 @@ function loadEnv() {
       }
       process.env[key] = value;
     });
-    console.log("✅ Environment variables loaded from .env");
+    console.log("Environment variables loaded from .env");
     return true;
   } catch (error) {
-    console.error("❌ Error reading .env file:", error.message);
+    console.error("Error reading .env file:", error.message);
     return false;
   }
 }
@@ -41,7 +43,7 @@ function loadEnv() {
 const envLoaded = loadEnv();
 if (process.env.NODE_ENV === "production" && !envLoaded) {
   const envPath = path.join(__dirname, ".env");
-  console.error(`\n❌ FATAL ERROR: .env file not found at ${envPath}`);
+  console.error(`\nFATAL ERROR: .env file not found at ${envPath}`);
   process.exit(1);
 }
 
@@ -63,7 +65,7 @@ const CLEANUP_INTERVAL = config.cleanup.intervalMinutes * 60 * 1000;
 const MAX_AGE = config.cleanup.maxAgeMinutes * 60 * 1000;
 const generatedDir = path.join(__dirname, "generated");
 const templatePreviewDir = path.join(generatedDir, "template-previews");
-const tmpDir = path.join(__dirname, "tmp");
+const uploadDir = path.join(generatedDir, "uploads");
 const previewSourceFiles = [
   path.join(__dirname, "templates.js"),
   path.join(__dirname, "generateImage.js"),
@@ -71,7 +73,7 @@ const previewSourceFiles = [
   path.join(__dirname, "shared", "fontCatalog.js"),
 ];
 
-for (const directory of [generatedDir, templatePreviewDir, tmpDir]) {
+for (const directory of [generatedDir, templatePreviewDir, uploadDir]) {
   if (!fs.existsSync(directory)) {
     fs.mkdirSync(directory, { recursive: true });
   }
@@ -105,6 +107,144 @@ function parsePositiveNumber(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function parseByteSize(value) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  const match = String(value)
+    .trim()
+    .match(/^(\d+(?:\.\d+)?)\s*(b|kb|mb|gb)?$/i);
+  if (!match) return 10 * 1024 * 1024;
+
+  const amount = Number(match[1]);
+  const unit = (match[2] || "b").toLowerCase();
+  const multiplier =
+    unit === "gb"
+      ? 1024 ** 3
+      : unit === "mb"
+        ? 1024 ** 2
+        : unit === "kb"
+          ? 1024
+          : 1;
+  return Math.max(1, Math.floor(amount * multiplier));
+}
+
+function getBaseUrl(req) {
+  return config.baseUrl || `${req.protocol}://${req.get("host")}`;
+}
+
+function isPathInside(targetPath, parentPath) {
+  const relativePath = path.relative(parentPath, targetPath);
+  return (
+    relativePath === "" ||
+    (!relativePath.startsWith("..") && !path.isAbsolute(relativePath))
+  );
+}
+
+function getExtensionForUpload(file) {
+  const originalExtension = path.extname(file.originalname || "").toLowerCase();
+  if (originalExtension) return originalExtension;
+
+  if (file.mimetype === "image/png") return ".png";
+  if (file.mimetype === "image/jpeg") return ".jpg";
+  if (file.mimetype === "image/webp") return ".webp";
+  if (file.mimetype === "image/gif") return ".gif";
+  if (file.mimetype === "image/svg+xml") return ".svg";
+  return ".img";
+}
+
+function resolveLocalGeneratedImagePath(imageUrl, baseUrl) {
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(imageUrl, baseUrl);
+  } catch {
+    return null;
+  }
+
+  const parsedBaseUrl = new URL(baseUrl);
+  if (parsedUrl.origin !== parsedBaseUrl.origin) return null;
+  if (!parsedUrl.pathname.startsWith("/images/")) return null;
+
+  const relativePath = decodeURIComponent(parsedUrl.pathname.slice("/images/".length));
+  const normalizedRelativePath = relativePath.split("/").join(path.sep);
+  const candidatePath = path.resolve(generatedDir, normalizedRelativePath);
+  if (!isPathInside(candidatePath, generatedDir)) return null;
+  if (!fs.existsSync(candidatePath) || fs.statSync(candidatePath).isDirectory()) return null;
+  return candidatePath;
+}
+
+async function resolveImageReference(imageUrl, baseUrl) {
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(imageUrl, baseUrl);
+  } catch {
+    throw validationError("Image URL must be a valid absolute or relative URL");
+  }
+
+  if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+    throw validationError("Image URL must use http or https");
+  }
+
+  const localPath = resolveLocalGeneratedImagePath(parsedUrl.toString(), baseUrl);
+  if (localPath) {
+    return localPath;
+  }
+
+  const response = await fetch(parsedUrl, {
+    headers: { Accept: "image/*" },
+  });
+
+  if (!response.ok) {
+    throw validationError(
+      `Failed to fetch image from URL (${response.status} ${response.statusText})`
+    );
+  }
+
+  const contentType = response.headers.get("content-type");
+  if (contentType && !contentType.toLowerCase().startsWith("image/")) {
+    throw validationError("Image URL must point to an image");
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+  if (!arrayBuffer.byteLength) {
+    throw validationError("Image URL returned an empty response");
+  }
+
+  return Buffer.from(arrayBuffer);
+}
+
+async function resolveRenderablePayload(payload, req) {
+  const baseUrl = getBaseUrl(req);
+  const tasks = [];
+
+  if (payload.background.type === "image") {
+    tasks.push(resolveImageReference(payload.background.imageUrl, baseUrl));
+  } else {
+    tasks.push(Promise.resolve(null));
+  }
+
+  if (payload.iconSource === "image") {
+    tasks.push(resolveImageReference(payload.iconImage, baseUrl));
+  } else {
+    tasks.push(Promise.resolve(null));
+  }
+
+  const [resolvedBackgroundImage, resolvedIconImage] = await Promise.all(tasks);
+
+  return {
+    ...payload,
+    background:
+      payload.background.type === "image"
+        ? {
+            ...payload.background,
+            image: resolvedBackgroundImage,
+          }
+        : payload.background,
+    iconImage: resolvedIconImage || "",
+  };
+}
+
 function normalizeGeneratePayload(body) {
   const template = getTemplate(body.templateId);
   const name = typeof body.name === "string" ? body.name.trim() : "";
@@ -126,6 +266,10 @@ function normalizeGeneratePayload(body) {
   const mainTextFontFamily = isNonEmptyString(body.mainTextFontFamily)
     ? body.mainTextFontFamily.trim()
     : template.defaults.mainTextFontFamily;
+  const mainTextFontWeight =
+    body.mainTextFontWeight === "normal" || body.mainTextFontWeight === "bold"
+      ? body.mainTextFontWeight
+      : template.defaults.mainTextFontWeight;
   const mainTextFontSize =
     body.mainTextFontSize !== undefined && body.mainTextFontSize !== null
       ? parsePositiveNumber(body.mainTextFontSize)
@@ -149,9 +293,33 @@ function normalizeGeneratePayload(body) {
       ? body.iconSource
       : "none";
   const iconName = isNonEmptyString(body.iconName) ? body.iconName.trim() : "";
-  const iconImageBase64 = isNonEmptyString(body.iconImageBase64)
-    ? body.iconImageBase64.trim()
-    : "";
+  const iconImage = isNonEmptyString(body.iconImage) ? body.iconImage.trim() : "";
+  const legacyIconOffsetX =
+    body.iconOffsetX !== undefined && body.iconOffsetX !== null
+      ? parsePositiveNumber(body.iconOffsetX)
+      : null;
+  const legacyIconOffsetY =
+    body.iconOffsetY !== undefined && body.iconOffsetY !== null
+      ? parsePositiveNumber(body.iconOffsetY)
+      : null;
+  const iconPositionX =
+    body.iconPositionX !== undefined && body.iconPositionX !== null
+      ? parsePositiveNumber(body.iconPositionX)
+      : Number.isFinite(legacyIconOffsetX)
+        ? template.defaults.iconPositionX +
+          (legacyIconOffsetX / template.config.canvas.width) * 100
+        : template.defaults.iconPositionX;
+  const iconPositionY =
+    body.iconPositionY !== undefined && body.iconPositionY !== null
+      ? parsePositiveNumber(body.iconPositionY)
+      : Number.isFinite(legacyIconOffsetY)
+        ? template.defaults.iconPositionY +
+          (legacyIconOffsetY / template.config.canvas.height) * 100
+        : template.defaults.iconPositionY;
+  const iconScale =
+    body.iconScale !== undefined && body.iconScale !== null
+      ? parsePositiveNumber(body.iconScale)
+      : 1;
   const iconColor = isNonEmptyString(body.iconColor)
     ? body.iconColor.trim()
     : template.defaults.iconColor;
@@ -167,6 +335,9 @@ function normalizeGeneratePayload(body) {
   }
   if (!mainTextFontFamily) {
     throw validationError("Main text font family is required");
+  }
+  if (!["normal", "bold"].includes(mainTextFontWeight)) {
+    throw validationError("Main text font weight must be normal or bold");
   }
   if (!mainTextFontFamilies.has(mainTextFontFamily)) {
     throw validationError("Selected main text font is not supported");
@@ -195,6 +366,15 @@ function normalizeGeneratePayload(body) {
   ) {
     throw validationError("Background image vertical position must be between -100 and 100");
   }
+  if (!Number.isFinite(iconPositionX) || iconPositionX < 0 || iconPositionX > 100) {
+    throw validationError("Icon horizontal position must be between 0 and 100");
+  }
+  if (!Number.isFinite(iconPositionY) || iconPositionY < 0 || iconPositionY > 100) {
+    throw validationError("Icon vertical position must be between 0 and 100");
+  }
+  if (!Number.isFinite(iconScale) || iconScale < 0.4 || iconScale > 2.5) {
+    throw validationError("Icon size must be between 0.4 and 2.5");
+  }
 
   let background;
   if (backgroundType === "color") {
@@ -207,9 +387,7 @@ function normalizeGeneratePayload(body) {
     };
   } else if (backgroundType === "gradient") {
     if (!isNonEmptyString(body.backgroundGradientCss)) {
-      throw validationError(
-        "Gradient config is required for gradient backgrounds"
-      );
+      throw validationError("Gradient config is required for gradient backgrounds");
     }
     const parsedGradient = parseLinearGradientCss(body.backgroundGradientCss.trim());
     if (!parsedGradient) {
@@ -223,12 +401,12 @@ function normalizeGeneratePayload(body) {
       gradient: parsedGradient,
     };
   } else {
-    if (!isNonEmptyString(body.backgroundImageBase64)) {
+    if (!isNonEmptyString(body.backgroundImage)) {
       throw validationError("Background image is required for image backgrounds");
     }
     background = {
       type: "image",
-      imageBase64: body.backgroundImageBase64.trim(),
+      imageUrl: body.backgroundImage.trim(),
       zoom: backgroundImageZoom,
       offsetX: backgroundImageOffsetX,
       offsetY: backgroundImageOffsetY,
@@ -239,13 +417,11 @@ function normalizeGeneratePayload(body) {
     throw validationError("Surface opacity must be between 0 and 1");
   }
 
-  if (iconSource === "lucide") {
-    if (!curatedLucideIconNameSet.has(iconName)) {
-      throw validationError("Selected icon is not supported");
-    }
+  if (iconSource === "lucide" && !curatedLucideIconNameSet.has(iconName)) {
+    throw validationError("Selected icon is not supported");
   }
 
-  if (iconSource === "image" && !iconImageBase64) {
+  if (iconSource === "image" && !iconImage) {
     throw validationError("Icon image is required when icon source is image");
   }
 
@@ -256,7 +432,10 @@ function normalizeGeneratePayload(body) {
     background,
     iconSource,
     iconName,
-    iconImageBase64,
+    iconImage,
+    iconPositionX,
+    iconPositionY,
+    iconScale,
     iconColor,
     iconBackgroundColor,
     surfaceColor,
@@ -264,6 +443,7 @@ function normalizeGeneratePayload(body) {
     primaryColor,
     mainTextColor,
     mainTextFontFamily,
+    mainTextFontWeight,
     mainTextFontSize,
     flipBackgroundPosition,
   };
@@ -304,9 +484,30 @@ function getTemplatePreviewUrl(req, templateId) {
   if (!fs.existsSync(previewPath)) return undefined;
 
   const previewVersion = fs.statSync(previewPath).mtimeMs;
-  const baseUrl = config.baseUrl || `${req.protocol}://${req.get("host")}`;
-  return `${baseUrl}/images/template-previews/${templateId}.webp?v=${previewVersion}`;
+  return `${getBaseUrl(req)}/images/template-previews/${templateId}.webp?v=${previewVersion}`;
 }
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, callback) => {
+      callback(null, uploadDir);
+    },
+    filename: (_req, file, callback) => {
+      callback(null, `${Date.now()}-${randomUUID()}${getExtensionForUpload(file)}`);
+    },
+  }),
+  fileFilter: (_req, file, callback) => {
+    if (file.mimetype?.startsWith("image/")) {
+      callback(null, true);
+      return;
+    }
+
+    callback(validationError("Only image uploads are supported"));
+  },
+  limits: {
+    fileSize: parseByteSize(config.maxRequestSize),
+  },
+});
 
 app.use(
   cors({
@@ -347,14 +548,59 @@ app.get("/api/templates", async (req, res) => {
   }
 });
 
+app.post("/api/upload-image", (req, res) => {
+  upload.single("image")(req, res, (error) => {
+    if (error) {
+      const statusCode = error.statusCode || (error.code === "LIMIT_FILE_SIZE" ? 400 : 500);
+      const message =
+        error.code === "LIMIT_FILE_SIZE"
+          ? "Uploaded image is too large"
+          : error.message || "Failed to upload image";
+      res.status(statusCode).json({ success: false, error: message });
+      return;
+    }
+
+    if (!req.file) {
+      res.status(400).json({
+        success: false,
+        error: "Image file is required",
+      });
+      return;
+    }
+
+    res.json({
+      success: true,
+      url: `${getBaseUrl(req)}/images/uploads/${req.file.filename}`,
+    });
+  });
+});
+
+app.post("/api/preview-image", async (req, res) => {
+  try {
+    const payload = normalizeGeneratePayload(req.body);
+    const renderablePayload = await resolveRenderablePayload(payload, req);
+    const buffer = await renderImageBuffer(renderablePayload);
+    res.setHeader("Cache-Control", "no-store");
+    res.type("image/webp");
+    res.send(buffer);
+  } catch (error) {
+    const statusCode = error.statusCode || 500;
+    console.error("Error generating preview image:", error);
+    res.status(statusCode).json({
+      success: false,
+      error: error.message || "Failed to generate preview image",
+    });
+  }
+});
+
 app.post("/api/generate-image", async (req, res) => {
   try {
     const payload = normalizeGeneratePayload(req.body);
-    const result = await generateImage(payload);
-    const baseUrl = config.baseUrl || `${req.protocol}://${req.get("host")}`;
+    const renderablePayload = await resolveRenderablePayload(payload, req);
+    const result = await generateImage(renderablePayload);
     res.json({
       success: true,
-      downloadUrl: `${baseUrl}/images/${result.filename}`,
+      downloadUrl: `${getBaseUrl(req)}/images/${result.filename}`,
       filename: result.filename,
     });
   } catch (error) {
@@ -404,29 +650,42 @@ if (distPath) {
 }
 
 app.listen(config.port, () => {
-  console.log(`\n🖼️  ${config.appName} Running on http://localhost:${config.port}\n`);
+  console.log(`\n${config.appName} running on http://localhost:${config.port}\n`);
 });
 
-function cleanupOldImages() {
-  if (!config.cleanup.enabled || !fs.existsSync(generatedDir)) return;
+function cleanupGeneratedFiles(directoryPath) {
+  if (!fs.existsSync(directoryPath)) return 0;
+  if (path.resolve(directoryPath) === path.resolve(templatePreviewDir)) return 0;
 
   const now = Date.now();
-  const files = fs.readdirSync(generatedDir);
   let deletedCount = 0;
+  const entries = fs.readdirSync(directoryPath, { withFileTypes: true });
 
-  for (const file of files) {
-    if (file === ".gitkeep") continue;
-    const filePath = path.join(generatedDir, file);
-    const stats = fs.statSync(filePath);
-    if (stats.isDirectory()) continue;
+  for (const entry of entries) {
+    if (entry.name === ".gitkeep") continue;
+
+    const entryPath = path.join(directoryPath, entry.name);
+    if (entry.isDirectory()) {
+      deletedCount += cleanupGeneratedFiles(entryPath);
+      continue;
+    }
+
+    const stats = fs.statSync(entryPath);
     if (now - stats.mtimeMs > MAX_AGE) {
-      fs.unlinkSync(filePath);
+      fs.unlinkSync(entryPath);
       deletedCount += 1;
     }
   }
 
+  return deletedCount;
+}
+
+function cleanupOldImages() {
+  if (!config.cleanup.enabled || !fs.existsSync(generatedDir)) return;
+
+  const deletedCount = cleanupGeneratedFiles(generatedDir);
   if (deletedCount > 0) {
-    console.log(`🧹 Cleaned up ${deletedCount} old image(s)`);
+    console.log(`Cleaned up ${deletedCount} old image(s)`);
   }
 }
 

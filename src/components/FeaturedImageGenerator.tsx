@@ -7,7 +7,15 @@ import {
   useRef,
   useState,
 } from "react";
-import { Download, Image, Loader2, Palette, Upload } from "lucide-react";
+import {
+  ChevronDown,
+  Copy,
+  Download,
+  Image,
+  Loader2,
+  Palette,
+  Upload,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -26,6 +34,7 @@ const APP_DESCRIPTION =
 
 type BackgroundType = "color" | "gradient" | "image";
 type IconSource = "none" | "lucide" | "image";
+type MainTextFontWeight = "normal" | "bold";
 
 interface TemplatePreview {
   accentColor: string;
@@ -40,11 +49,14 @@ interface TemplateDefaults {
   iconBackgroundColor: string;
   iconColor: string;
   iconName: string;
+  iconPositionX: number;
+  iconPositionY: number;
   iconSource: IconSource;
   mainText: string;
   mainTextColor: string;
   mainTextFontFamily: string;
   mainTextFontSize: number;
+  mainTextFontWeight: MainTextFontWeight;
   name: string;
   primaryColor: string;
   surfaceColor: string;
@@ -69,8 +81,60 @@ interface TemplateSelectorProps {
 }
 
 interface PreviewPanelProps {
-  generatedImage: string | null;
+  isLoading: boolean;
   onDownload: () => void;
+  previewError: string | null;
+  previewImageUrl: string | null;
+}
+
+interface GenerateRequestPayload {
+  backgroundColor?: string;
+  backgroundGradientCss?: string;
+  backgroundImage: string;
+  backgroundImageOffsetX?: number;
+  backgroundImageOffsetY?: number;
+  backgroundImageZoom?: number;
+  backgroundType: BackgroundType;
+  flipBackgroundPosition?: boolean;
+  iconBackgroundColor?: string;
+  iconColor?: string;
+  iconImage: string;
+  iconPositionX?: number;
+  iconPositionY?: number;
+  iconScale?: number;
+  iconName?: string;
+  iconSource: IconSource;
+  mainText: string;
+  mainTextColor: string;
+  mainTextFontFamily: string;
+  mainTextFontSize: number;
+  mainTextFontWeight: MainTextFontWeight;
+  name: string;
+  primaryColor: string;
+  surfaceColor: string;
+  surfaceOpacity?: number;
+  templateId: string;
+}
+
+type GeneratePayloadResult =
+  | {
+      isValid: true;
+      payload: GenerateRequestPayload;
+    }
+  | {
+      error: string;
+      isValid: false;
+    };
+
+interface ApiConfigAccordionProps {
+  curlCommand: string;
+  isOpen: boolean;
+  jsonPayload: string;
+  onCopyCurl: () => void;
+  onCopyJson: () => void;
+  onToggle: () => void;
+  payloadResult: GeneratePayloadResult;
+  requestUrl: string;
 }
 
 function parseLinearGradientCss(input: string) {
@@ -90,13 +154,16 @@ function buildGradientCss(angle: number, startColor: string, endColor: string) {
   return `linear-gradient(${angle}deg, ${startColor} 0%, ${endColor} 100%)`;
 }
 
-function fileToDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(new Error("Failed to read file"));
-    reader.readAsDataURL(file);
-  });
+function toBashSingleQuoted(value: string) {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+function buildCurlCommand(requestUrl: string, payload: GenerateRequestPayload) {
+  return [
+    `curl -X POST ${toBashSingleQuoted(requestUrl)} \\`,
+    "  -H 'Content-Type: application/json' \\",
+    `  -d ${toBashSingleQuoted(JSON.stringify(payload))}`,
+  ].join("\n");
 }
 
 const TemplateSelector = memo(function TemplateSelector({
@@ -173,20 +240,50 @@ const TemplateSelector = memo(function TemplateSelector({
 });
 
 const PreviewPanel = memo(function PreviewPanel({
-  generatedImage,
+  isLoading,
   onDownload,
+  previewError,
+  previewImageUrl,
 }: PreviewPanelProps) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    if (!previewImageUrl || !canvasRef.current) return;
+
+    const canvas = canvasRef.current;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+
+    let isCancelled = false;
+    const previewImage = new window.Image();
+    previewImage.decoding = "async";
+    previewImage.onload = () => {
+      if (isCancelled) return;
+
+      canvas.width = previewImage.naturalWidth;
+      canvas.height = previewImage.naturalHeight;
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(previewImage, 0, 0, canvas.width, canvas.height);
+    };
+    previewImage.src = previewImageUrl;
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [previewImageUrl]);
+
   return (
     <Card className="border-slate-700 bg-slate-800/40 [contain:layout_paint]">
       <CardHeader>
         <CardTitle className="flex items-center justify-between text-white">
           <span>Preview</span>
-          {generatedImage && (
+          {previewImageUrl && (
             <Button
               size="sm"
               variant="outline"
               onClick={onDownload}
               className="border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-white"
+              disabled={isLoading}
             >
               <Download className="mr-2 h-4 w-4" />
               Download
@@ -195,19 +292,173 @@ const PreviewPanel = memo(function PreviewPanel({
         </CardTitle>
       </CardHeader>
       <CardContent>
-        {generatedImage ? (
-          <img
-            src={generatedImage}
-            alt="Generated featured image"
-            className="w-full rounded-lg border border-slate-600 shadow-lg"
-            decoding="async"
-          />
+        {previewImageUrl ? (
+          <div className="space-y-3">
+            <div
+              className="relative"
+              onContextMenu={(event) => event.preventDefault()}
+            >
+              <canvas
+                ref={canvasRef}
+                aria-label="Live featured image preview"
+                className="block w-full rounded-lg border border-slate-600 shadow-lg"
+              />
+              <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-lg">
+                <div className="absolute left-4 top-3">
+                  <span className="select-none text-[10px] font-medium tracking-[0.22em] text-white/14">
+                    Rankima.com
+                  </span>
+                </div>
+                <div className="absolute bottom-3 right-4">
+                  <span className="select-none text-[10px] font-medium tracking-[0.22em] text-white/14">
+                    Rankima.com
+                  </span>
+                </div>
+              </div>
+              {isLoading && (
+                <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-slate-950/45 backdrop-blur-[1px]">
+                  <div className="flex items-center gap-2 rounded-full border border-slate-700 bg-slate-950/85 px-3 py-2 text-sm text-slate-200">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Updating preview...
+                  </div>
+                </div>
+              )}
+            </div>
+            {previewError && (
+              <p className="text-xs text-amber-200">{previewError}</p>
+            )}
+            <p className="text-[11px] text-slate-500">
+              Preview includes a Rankima.com watermark. Click Download to save the full image without it.
+            </p>
+          </div>
         ) : (
-          <div className="flex aspect-video items-center justify-center rounded-lg border border-dashed border-slate-600 bg-slate-900/30">
-            <p className="text-sm text-slate-500">Your image will appear here</p>
+          <div className="space-y-3">
+            <div className="flex aspect-video items-center justify-center rounded-lg border border-dashed border-slate-600 bg-slate-900/30">
+              <p className="text-sm text-slate-500">
+                {isLoading ? "Building preview..." : "Your image will appear here"}
+              </p>
+            </div>
+            {previewError ? (
+              <p className="text-xs text-amber-200">{previewError}</p>
+            ) : (
+              <p className="text-xs text-slate-500">
+                The preview initializes automatically as soon as the current settings are valid.
+              </p>
+            )}
           </div>
         )}
       </CardContent>
+    </Card>
+  );
+});
+
+const ApiConfigAccordion = memo(function ApiConfigAccordion({
+  curlCommand,
+  isOpen,
+  jsonPayload,
+  onCopyCurl,
+  onCopyJson,
+  onToggle,
+  payloadResult,
+  requestUrl,
+}: ApiConfigAccordionProps) {
+  const codeBlockClassName =
+    "max-h-64 overflow-auto rounded-xl border border-slate-700 bg-slate-950/80 p-4 text-xs leading-relaxed text-slate-300 whitespace-pre-wrap break-all";
+
+  return (
+    <Card className="border-slate-700 bg-slate-800/40 [contain:layout_paint]">
+      <CardHeader className="pb-4">
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={isOpen}
+          className="flex w-full items-center justify-between gap-4 rounded-xl border border-slate-700 bg-slate-900/40 px-4 py-3 text-left transition-colors hover:border-slate-500"
+        >
+          <div>
+            <div className="text-lg font-semibold text-white">API Config</div>
+            <p className="mt-1 text-sm text-slate-400">
+              Copy the exact current request body and cURL command.
+            </p>
+          </div>
+          <ChevronDown
+            className={`h-5 w-5 shrink-0 text-slate-400 transition-transform ${
+              isOpen ? "rotate-180" : ""
+            }`}
+          />
+        </button>
+      </CardHeader>
+      {isOpen && (
+        <CardContent className="space-y-4">
+          <div className="rounded-xl border border-slate-700 bg-slate-900/40 p-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-900">
+                POST
+              </span>
+              <code className="text-xs text-slate-300 break-all">{requestUrl}</code>
+            </div>
+          </div>
+
+          {payloadResult.isValid === false && (
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+              {payloadResult.error}
+            </div>
+          )}
+
+          <section className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold text-white">JSON Body</h3>
+                <p className="text-xs text-slate-500">
+                  Exact payload accepted by <code>/api/generate-image</code>.
+                </p>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={onCopyJson}
+                disabled={!payloadResult.isValid}
+                className="border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-white"
+              >
+                <Copy className="mr-2 h-4 w-4" />
+                Copy JSON
+              </Button>
+            </div>
+            <pre className={codeBlockClassName}>
+              {payloadResult.isValid
+                ? jsonPayload
+                : "Complete required fields to enable copyable API config."}
+            </pre>
+          </section>
+
+          <section className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold text-white">cURL</h3>
+                <p className="text-xs text-slate-500">
+                  Ready-to-run request for the current design state.
+                </p>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={onCopyCurl}
+                disabled={!payloadResult.isValid}
+                className="border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-white"
+              >
+                <Copy className="mr-2 h-4 w-4" />
+                Copy cURL
+              </Button>
+            </div>
+            <pre className={codeBlockClassName}>
+              {payloadResult.isValid
+                ? curlCommand
+                : "The cURL example will appear once the current form state is valid."}
+            </pre>
+          </section>
+        </CardContent>
+      )}
     </Card>
   );
 });
@@ -225,14 +476,17 @@ const FeaturedImageGenerator = () => {
   const [gradientAngle, setGradientAngle] = useState(135);
   const [gradientStartColor, setGradientStartColor] = useState("#667eea");
   const [gradientEndColor, setGradientEndColor] = useState("#764ba2");
-  const [backgroundImage, setBackgroundImage] = useState<string | null>(null);
+  const [backgroundImageUrl, setBackgroundImageUrl] = useState("");
   const [backgroundImageZoom, setBackgroundImageZoom] = useState(1);
   const [backgroundImageOffsetX, setBackgroundImageOffsetX] = useState(0);
   const [backgroundImageOffsetY, setBackgroundImageOffsetY] = useState(0);
   const [flipBackgroundPosition, setFlipBackgroundPosition] = useState(false);
   const [iconSource, setIconSource] = useState<IconSource>("none");
   const [iconName, setIconName] = useState("sparkles");
-  const [iconImage, setIconImage] = useState<string | null>(null);
+  const [iconImageUrl, setIconImageUrl] = useState("");
+  const [iconPositionX, setIconPositionX] = useState(50);
+  const [iconPositionY, setIconPositionY] = useState(50);
+  const [iconScale, setIconScale] = useState(1);
   const [iconColor, setIconColor] = useState("#ffffff");
   const [iconBackgroundColor, setIconBackgroundColor] = useState("#2563eb");
   const [surfaceColor, setSurfaceColor] = useState("#ffffff");
@@ -241,35 +495,55 @@ const FeaturedImageGenerator = () => {
   const [mainTextColor, setMainTextColor] = useState("#111827");
   const [mainTextFontFamily, setMainTextFontFamily] = useState("Arial, sans-serif");
   const [mainTextFontSize, setMainTextFontSize] = useState(56);
+  const [mainTextFontWeight, setMainTextFontWeight] =
+    useState<MainTextFontWeight>("bold");
   const [showStyleOverrides, setShowStyleOverrides] = useState(false);
-  const [generatedImage, setGeneratedImage] = useState<string | null>(null);
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [isApiConfigOpen, setIsApiConfigOpen] = useState(false);
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [isUploadingBackground, setIsUploadingBackground] = useState(false);
+  const [isUploadingIcon, setIsUploadingIcon] = useState(false);
   const [isIconPickerOpen, setIsIconPickerOpen] = useState(false);
   const backgroundInputRef = useRef<HTMLInputElement>(null);
-  const backgroundImageBase64Ref = useRef<string | null>(null);
   const iconInputRef = useRef<HTMLInputElement>(null);
-  const iconImageBase64Ref = useRef<string | null>(null);
+  const latestPreviewBlobRef = useRef<Blob | null>(null);
+  const previewRequestIdRef = useRef(0);
+  const selectedTemplateRef = useRef(selectedTemplate);
 
   const selectedTemplateData = useMemo(
     () => templates.find((template) => template.id === selectedTemplate) ?? null,
     [selectedTemplate, templates]
   );
+  const apiBaseUrl = useMemo(() => {
+    const runtimeBaseUrl =
+      API_URL || (typeof window !== "undefined" ? window.location.origin : "");
+    return runtimeBaseUrl.replace(/\/$/, "");
+  }, []);
+  const requestUrl = useMemo(
+    () => (apiBaseUrl ? `${apiBaseUrl}/api/generate-image` : "/api/generate-image"),
+    [apiBaseUrl]
+  );
+  const previewRequestUrl = useMemo(
+    () => (apiBaseUrl ? `${apiBaseUrl}/api/preview-image` : "/api/preview-image"),
+    [apiBaseUrl]
+  );
+  const uploadRequestUrl = useMemo(
+    () => (apiBaseUrl ? `${apiBaseUrl}/api/upload-image` : "/api/upload-image"),
+    [apiBaseUrl]
+  );
+
+  useEffect(() => {
+    selectedTemplateRef.current = selectedTemplate;
+  }, [selectedTemplate]);
 
   useEffect(() => {
     return () => {
-      if (backgroundImage) {
-        URL.revokeObjectURL(backgroundImage);
+      if (previewImageUrl) {
+        URL.revokeObjectURL(previewImageUrl);
       }
     };
-  }, [backgroundImage]);
-
-  useEffect(() => {
-    return () => {
-      if (iconImage) {
-        URL.revokeObjectURL(iconImage);
-      }
-    };
-  }, [iconImage]);
+  }, [previewImageUrl]);
 
   const applyTemplateDefaults = useCallback((template: Template) => {
     setSelectedTemplate(template.id);
@@ -284,8 +558,7 @@ const FeaturedImageGenerator = () => {
       setGradientStartColor(parsedGradient.startColor);
       setGradientEndColor(parsedGradient.endColor);
     }
-    setBackgroundImage(null);
-    backgroundImageBase64Ref.current = null;
+    setBackgroundImageUrl("");
     setBackgroundImageZoom(1);
     setBackgroundImageOffsetX(0);
     setBackgroundImageOffsetY(0);
@@ -293,8 +566,10 @@ const FeaturedImageGenerator = () => {
     if (backgroundInputRef.current) backgroundInputRef.current.value = "";
     setIconSource(template.defaults.iconSource);
     setIconName(template.defaults.iconName);
-    setIconImage(null);
-    iconImageBase64Ref.current = null;
+    setIconImageUrl("");
+    setIconPositionX(template.defaults.iconPositionX);
+    setIconPositionY(template.defaults.iconPositionY);
+    setIconScale(1);
     if (iconInputRef.current) iconInputRef.current.value = "";
     setIconColor(template.defaults.iconColor);
     setIconBackgroundColor(template.defaults.iconBackgroundColor);
@@ -304,6 +579,8 @@ const FeaturedImageGenerator = () => {
     setMainTextColor(template.defaults.mainTextColor);
     setMainTextFontFamily(template.defaults.mainTextFontFamily);
     setMainTextFontSize(template.defaults.mainTextFontSize);
+    setMainTextFontWeight(template.defaults.mainTextFontWeight);
+    setPreviewError(null);
   }, []);
 
   const handlePrimaryColorChange = useCallback(
@@ -346,7 +623,9 @@ const FeaturedImageGenerator = () => {
         const nextTemplates = data.templates as Template[];
         setTemplates(nextTemplates);
         const nextSelectedTemplate =
-          nextTemplates.find((template) => template.id === selectedTemplate) ||
+          nextTemplates.find(
+            (template) => template.id === selectedTemplateRef.current
+          ) ||
           nextTemplates[0];
         if (nextSelectedTemplate) {
           applyTemplateDefaults(nextSelectedTemplate);
@@ -386,65 +665,73 @@ const FeaturedImageGenerator = () => {
     }
   }, []);
 
+  const uploadImageFile = useCallback(
+    async (file: File) => {
+      const formData = new FormData();
+      formData.append("image", file);
+
+      const response = await fetch(uploadRequestUrl, {
+        method: "POST",
+        body: formData,
+      });
+      const contentType = response.headers.get("content-type");
+      if (!contentType?.includes("application/json")) {
+        throw new Error("Server returned a non-JSON upload response");
+      }
+
+      const data = await response.json();
+      if (!response.ok || !data.success || typeof data.url !== "string") {
+        throw new Error(data.error || "Failed to upload image");
+      }
+
+      return data.url;
+    },
+    [uploadRequestUrl]
+  );
+
   const handleBackgroundUpload = useCallback(
     async (event: React.ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
       if (!file) return;
-      const nextPreviewUrl = URL.createObjectURL(file);
       try {
-        const nextBase64 = await fileToDataUrl(file);
-        setBackgroundImage((currentImage) => {
-          if (currentImage) {
-            URL.revokeObjectURL(currentImage);
-          }
-          return nextPreviewUrl;
-        });
-        backgroundImageBase64Ref.current = nextBase64;
+        setIsUploadingBackground(true);
+        const uploadedUrl = await uploadImageFile(file);
         setBackgroundType("image");
+        setBackgroundImageUrl(uploadedUrl);
         setBackgroundImageZoom(1);
         setBackgroundImageOffsetX(0);
         setBackgroundImageOffsetY(0);
         toast.success("Background image uploaded");
       } catch (error) {
-        URL.revokeObjectURL(nextPreviewUrl);
         toast.error(error instanceof Error ? error.message : "Failed to upload image");
+      } finally {
+        setIsUploadingBackground(false);
       }
     },
-    []
+    [uploadImageFile]
   );
 
   const handleIconUpload = useCallback(
     async (event: React.ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
       if (!file) return;
-      const nextPreviewUrl = URL.createObjectURL(file);
       try {
-        const nextBase64 = await fileToDataUrl(file);
-        setIconImage((currentImage) => {
-          if (currentImage) {
-            URL.revokeObjectURL(currentImage);
-          }
-          return nextPreviewUrl;
-        });
-        iconImageBase64Ref.current = nextBase64;
+        setIsUploadingIcon(true);
+        const uploadedUrl = await uploadImageFile(file);
+        setIconImageUrl(uploadedUrl);
         setIconSource("image");
         toast.success("Icon image uploaded");
       } catch (error) {
-        URL.revokeObjectURL(nextPreviewUrl);
         toast.error(error instanceof Error ? error.message : "Failed to upload icon");
+      } finally {
+        setIsUploadingIcon(false);
       }
     },
-    []
+    [uploadImageFile]
   );
 
   const clearBackgroundImage = useCallback(() => {
-    setBackgroundImage((currentImage) => {
-      if (currentImage) {
-        URL.revokeObjectURL(currentImage);
-      }
-      return null;
-    });
-    backgroundImageBase64Ref.current = null;
+    setBackgroundImageUrl("");
     setBackgroundImageZoom(1);
     setBackgroundImageOffsetX(0);
     setBackgroundImageOffsetY(0);
@@ -452,123 +739,175 @@ const FeaturedImageGenerator = () => {
   }, []);
 
   const clearIconImage = useCallback(() => {
-    setIconImage((currentImage) => {
-      if (currentImage) {
-        URL.revokeObjectURL(currentImage);
-      }
-      return null;
-    });
-    iconImageBase64Ref.current = null;
+    setIconImageUrl("");
     if (iconInputRef.current) iconInputRef.current.value = "";
   }, []);
 
-  const generateImage = useCallback(async () => {
-    if (!name.trim()) {
-      toast.error("Name is required");
-      return;
+  const generatePayloadResult = useMemo<GeneratePayloadResult>(() => {
+    const trimmedName = name.trim();
+    const trimmedMainText = mainText.trim();
+    const trimmedBackgroundImageUrl = backgroundImageUrl.trim();
+    const trimmedIconImageUrl = iconImageUrl.trim();
+
+    if (!trimmedName) {
+      return {
+        error: "Complete required fields to enable copyable API config. Name is required.",
+        isValid: false,
+      };
     }
-    if (name.trim().length > 25) {
-      toast.error("Name must be 25 characters or fewer");
-      return;
+    if (trimmedName.length > 25) {
+      return {
+        error:
+          "Complete required fields to enable copyable API config. Name must be 25 characters or fewer.",
+        isValid: false,
+      };
     }
-    if (!mainText.trim()) {
-      toast.error("Main text is required");
-      return;
+    if (!trimmedMainText) {
+      return {
+        error: "Complete required fields to enable copyable API config. Main text is required.",
+        isValid: false,
+      };
     }
-    if (mainText.trim().length > 70) {
-      toast.error("Main text must be 70 characters or fewer");
-      return;
+    if (trimmedMainText.length > 70) {
+      return {
+        error:
+          "Complete required fields to enable copyable API config. Main text must be 70 characters or fewer.",
+        isValid: false,
+      };
     }
-    if (backgroundType === "image" && !backgroundImageBase64Ref.current) {
-      toast.error("Upload a background image to use image mode");
-      return;
+    if (!mainTextFontFamily) {
+      return {
+        error:
+          "Complete required fields to enable copyable API config. Main text font family is required.",
+        isValid: false,
+      };
+    }
+    if (!["normal", "bold"].includes(mainTextFontWeight)) {
+      return {
+        error:
+          "Complete required fields to enable copyable API config. Main text font weight must be normal or bold.",
+        isValid: false,
+      };
+    }
+    if (mainTextFontSize < 24 || mainTextFontSize > 120) {
+      return {
+        error:
+          "Complete required fields to enable copyable API config. Main text font size must be between 24 and 120.",
+        isValid: false,
+      };
+    }
+    if (iconPositionX < 0 || iconPositionX > 100) {
+      return {
+        error:
+          "Complete required fields to enable copyable API config. Icon horizontal position must be between 0 and 100.",
+        isValid: false,
+      };
+    }
+    if (iconPositionY < 0 || iconPositionY > 100) {
+      return {
+        error:
+          "Complete required fields to enable copyable API config. Icon vertical position must be between 0 and 100.",
+        isValid: false,
+      };
+    }
+    if (iconScale < 0.4 || iconScale > 2.5) {
+      return {
+        error:
+          "Complete required fields to enable copyable API config. Icon size must be between 0.4 and 2.5.",
+        isValid: false,
+      };
     }
     if (backgroundType === "gradient" && !parseLinearGradientCss(backgroundGradientCss)) {
-      toast.error("Use a valid linear-gradient value for the background");
-      return;
-    }
-    if (iconSource === "image" && !iconImageBase64Ref.current) {
-      toast.error("Upload an icon image or switch icon mode");
-      return;
-    }
-
-    setIsGenerating(true);
-    try {
-      const body: Record<string, unknown> = {
-        templateId: selectedTemplate,
-        name: name.trim(),
-        mainText: mainText.trim(),
-        backgroundType,
-        iconSource,
-        primaryColor,
-        mainTextColor,
-        mainTextFontFamily,
-        mainTextFontSize,
-        surfaceColor,
+      return {
+        error:
+          "Complete required fields to enable copyable API config. Use a valid linear-gradient value for the background.",
+        isValid: false,
       };
-
-      if (surfaceOpacity !== undefined) body.surfaceOpacity = surfaceOpacity;
-
-      if (backgroundType === "color") {
-        body.backgroundColor = backgroundColor;
-      } else if (backgroundType === "gradient") {
-        body.backgroundGradientCss = backgroundGradientCss;
-      } else {
-        body.backgroundImageBase64 = backgroundImageBase64Ref.current;
-        body.backgroundImageZoom = backgroundImageZoom;
-        body.backgroundImageOffsetX = backgroundImageOffsetX;
-        body.backgroundImageOffsetY = backgroundImageOffsetY;
-        body.flipBackgroundPosition = flipBackgroundPosition;
-      }
-
-      if (iconSource === "lucide") {
-        body.iconName = iconName;
-        body.iconColor = iconColor;
-        body.iconBackgroundColor = iconBackgroundColor;
-      } else if (iconSource === "image") {
-        body.iconImageBase64 = iconImageBase64Ref.current;
-      }
-
-      const response = await fetch(`${API_URL}/api/generate-image`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-      const contentType = response.headers.get("content-type");
-      if (!contentType?.includes("application/json")) {
-        throw new Error("Server returned a non-JSON response");
-      }
-
-      const data = await response.json();
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || "Failed to generate image");
-      }
-
-      setGeneratedImage(data.downloadUrl);
-      toast.success("Image generated successfully");
-    } catch (error) {
-      console.error("Error generating image:", error);
-      toast.error(error instanceof Error ? error.message : "Failed to generate image");
-    } finally {
-      setIsGenerating(false);
     }
+    if (backgroundType === "image" && !trimmedBackgroundImageUrl) {
+      return {
+        error:
+          "Complete required fields to enable copyable API config. Add a background image URL or upload an image to use image mode.",
+        isValid: false,
+      };
+    }
+    if (iconSource === "image" && !trimmedIconImageUrl) {
+      return {
+        error:
+          "Complete required fields to enable copyable API config. Upload an icon image or switch icon mode.",
+        isValid: false,
+      };
+    }
+
+    const payload: GenerateRequestPayload = {
+      templateId: selectedTemplate,
+      name: trimmedName,
+      mainText: trimmedMainText,
+      backgroundType,
+      backgroundImage: backgroundType === "image" ? trimmedBackgroundImageUrl : "",
+      iconSource,
+      iconImage: iconSource === "image" ? trimmedIconImageUrl : "",
+      primaryColor,
+      mainTextColor,
+      mainTextFontFamily,
+      mainTextFontSize,
+      mainTextFontWeight,
+      surfaceColor,
+    };
+
+    if (surfaceOpacity !== undefined) {
+      payload.surfaceOpacity = surfaceOpacity;
+    }
+
+    if (backgroundType === "color") {
+      payload.backgroundColor = backgroundColor;
+    } else if (backgroundType === "gradient") {
+      payload.backgroundGradientCss = backgroundGradientCss;
+    } else {
+      payload.backgroundImageZoom = backgroundImageZoom;
+      payload.backgroundImageOffsetX = backgroundImageOffsetX;
+      payload.backgroundImageOffsetY = backgroundImageOffsetY;
+      payload.flipBackgroundPosition = flipBackgroundPosition;
+    }
+
+    if (iconSource === "lucide") {
+      payload.iconName = iconName;
+      payload.iconColor = iconColor;
+      payload.iconBackgroundColor = iconBackgroundColor;
+    }
+
+    if (iconSource !== "none") {
+      payload.iconPositionX = iconPositionX;
+      payload.iconPositionY = iconPositionY;
+      payload.iconScale = iconScale;
+    }
+
+    return {
+      isValid: true,
+      payload,
+    };
   }, [
     backgroundColor,
     backgroundGradientCss,
+    backgroundImageUrl,
     backgroundImageOffsetX,
     backgroundImageOffsetY,
     backgroundImageZoom,
-    flipBackgroundPosition,
     backgroundType,
+    flipBackgroundPosition,
     iconBackgroundColor,
     iconColor,
+    iconImageUrl,
+    iconPositionX,
+    iconPositionY,
+    iconScale,
     iconName,
     iconSource,
     mainText,
     mainTextColor,
     mainTextFontFamily,
     mainTextFontSize,
+    mainTextFontWeight,
     name,
     primaryColor,
     selectedTemplate,
@@ -576,12 +915,126 @@ const FeaturedImageGenerator = () => {
     surfaceOpacity,
   ]);
 
-  const downloadImage = useCallback(async () => {
-    if (!generatedImage) return;
+  const jsonPayload = useMemo(
+    () =>
+      generatePayloadResult.isValid
+        ? JSON.stringify(generatePayloadResult.payload, null, 2)
+        : "",
+    [generatePayloadResult]
+  );
+
+  const curlCommand = useMemo(
+    () =>
+      generatePayloadResult.isValid
+        ? buildCurlCommand(requestUrl, generatePayloadResult.payload)
+        : "",
+    [generatePayloadResult, requestUrl]
+  );
+
+  const copyToClipboard = useCallback(async (text: string, label: string) => {
+    if (typeof navigator === "undefined" || !navigator.clipboard) {
+      toast.error("Clipboard is not available in this browser");
+      return;
+    }
+
     try {
-      const response = await fetch(generatedImage);
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
+      await navigator.clipboard.writeText(text);
+      toast.success(`${label} copied to clipboard`);
+    } catch (error) {
+      console.error(`Failed to copy ${label}:`, error);
+      toast.error(`Failed to copy ${label}`);
+    }
+  }, []);
+
+  const handleCopyJson = useCallback(async () => {
+    if (!generatePayloadResult.isValid) return;
+    await copyToClipboard(jsonPayload, "JSON body");
+  }, [copyToClipboard, generatePayloadResult, jsonPayload]);
+
+  const handleCopyCurl = useCallback(async () => {
+    if (!generatePayloadResult.isValid) return;
+    await copyToClipboard(curlCommand, "cURL command");
+  }, [copyToClipboard, curlCommand, generatePayloadResult]);
+
+  useEffect(() => {
+    if (!selectedTemplateData) return;
+
+    if (generatePayloadResult.isValid === false) {
+      setIsPreviewLoading(false);
+      setPreviewError(generatePayloadResult.error);
+      return;
+    }
+
+    const previewRequestId = previewRequestIdRef.current + 1;
+    previewRequestIdRef.current = previewRequestId;
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(async () => {
+      setIsPreviewLoading(true);
+
+      try {
+        const response = await fetch(previewRequestUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(generatePayloadResult.payload),
+          signal: controller.signal,
+        });
+
+        const contentType = response.headers.get("content-type") || "";
+        if (!response.ok) {
+          if (contentType.includes("application/json")) {
+            const data = await response.json();
+            throw new Error(data.error || "Failed to generate preview");
+          }
+          throw new Error("Server returned an invalid preview response");
+        }
+
+        if (!contentType.startsWith("image/")) {
+          throw new Error("Preview response was not an image");
+        }
+
+        const blob = await response.blob();
+        if (controller.signal.aborted || previewRequestId !== previewRequestIdRef.current) {
+          return;
+        }
+
+        latestPreviewBlobRef.current = blob;
+        setPreviewError(null);
+        setPreviewImageUrl((currentPreviewImageUrl) => {
+          if (currentPreviewImageUrl) {
+            URL.revokeObjectURL(currentPreviewImageUrl);
+          }
+          return URL.createObjectURL(blob);
+        });
+      } catch (error) {
+        if (controller.signal.aborted || previewRequestId !== previewRequestIdRef.current) {
+          return;
+        }
+
+        console.error("Error generating preview image:", error);
+        setPreviewError(
+          error instanceof Error ? error.message : "Failed to generate preview"
+        );
+      } finally {
+        if (!controller.signal.aborted && previewRequestId === previewRequestIdRef.current) {
+          setIsPreviewLoading(false);
+        }
+      }
+    }, 350);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timeoutId);
+    };
+  }, [generatePayloadResult, previewRequestUrl, selectedTemplateData]);
+
+  const downloadImage = useCallback(async () => {
+    if (!latestPreviewBlobRef.current) {
+      toast.error("Preview is not ready yet");
+      return;
+    }
+
+    try {
+      const url = URL.createObjectURL(latestPreviewBlobRef.current);
       const link = document.createElement("a");
       link.download = `featured-image-${Date.now()}.webp`;
       link.href = url;
@@ -591,7 +1044,7 @@ const FeaturedImageGenerator = () => {
       console.error("Error downloading image:", error);
       toast.error("Failed to download image");
     }
-  }, [generatedImage]);
+  }, []);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-6 md:p-12">
@@ -659,6 +1112,25 @@ const FeaturedImageGenerator = () => {
                   value={mainTextFontFamily}
                   onChange={setMainTextFontFamily}
                 />
+                <div className="space-y-2">
+                  <Label className="text-xs text-slate-400">Main Text Weight</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(["normal", "bold"] as MainTextFontWeight[]).map((weight) => (
+                      <button
+                        key={weight}
+                        type="button"
+                        onClick={() => setMainTextFontWeight(weight)}
+                        className={`rounded-xl border px-3 py-3 text-sm font-medium capitalize transition ${
+                          mainTextFontWeight === weight
+                            ? "border-white bg-slate-800 text-white"
+                            : "border-slate-700 bg-slate-950/70 text-slate-400 hover:border-slate-500 hover:text-white"
+                        }`}
+                      >
+                        {weight}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-3">
                     <Label className="text-xs text-slate-400">Main Text Font Size</Label>
@@ -834,12 +1306,17 @@ const FeaturedImageGenerator = () => {
                         type="button"
                         variant="outline"
                         onClick={() => backgroundInputRef.current?.click()}
+                        disabled={isUploadingBackground}
                         className="flex-1 border-slate-600 bg-slate-900/50 text-slate-300 hover:bg-slate-700 hover:text-white"
                       >
-                        <Upload className="mr-2 h-4 w-4" />
-                        {backgroundImage ? "Change Image" : "Upload Image"}
+                        {isUploadingBackground ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Upload className="mr-2 h-4 w-4" />
+                        )}
+                        {backgroundImageUrl ? "Change Image" : "Upload Image"}
                       </Button>
-                      {backgroundImage && (
+                      {backgroundImageUrl && (
                         <Button
                           type="button"
                           variant="ghost"
@@ -850,10 +1327,19 @@ const FeaturedImageGenerator = () => {
                         </Button>
                       )}
                     </div>
-                    {backgroundImage && (
+                    <div className="space-y-2">
+                      <Label className="text-xs text-slate-400">Background Image URL</Label>
+                      <Input
+                        value={backgroundImageUrl}
+                        onChange={(event) => setBackgroundImageUrl(event.target.value)}
+                        placeholder="https://example.com/image.jpg"
+                        className="bg-slate-950/70 text-white placeholder:text-slate-500"
+                      />
+                    </div>
+                    {backgroundImageUrl && (
                       <>
                         <img
-                          src={backgroundImage}
+                          src={backgroundImageUrl}
                           alt="Background preview"
                           className="h-28 w-full rounded-xl border border-slate-700 object-contain bg-slate-950/60"
                           decoding="async"
@@ -1063,12 +1549,17 @@ const FeaturedImageGenerator = () => {
                           type="button"
                           variant="outline"
                           onClick={() => iconInputRef.current?.click()}
+                          disabled={isUploadingIcon}
                           className="flex-1 border-slate-600 bg-slate-900/50 text-slate-300 hover:bg-slate-700 hover:text-white"
                         >
-                          <Upload className="mr-2 h-4 w-4" />
-                          {iconImage ? "Change Icon Image" : "Upload Icon Image"}
+                          {isUploadingIcon ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          ) : (
+                            <Upload className="mr-2 h-4 w-4" />
+                          )}
+                          {iconImageUrl ? "Change Icon Image" : "Upload Icon Image"}
                         </Button>
-                        {iconImage && (
+                        {iconImageUrl && (
                           <Button
                             type="button"
                             variant="ghost"
@@ -1078,15 +1569,78 @@ const FeaturedImageGenerator = () => {
                             Clear
                           </Button>
                         )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs text-slate-400">Icon Image URL</Label>
+                      <Input
+                        value={iconImageUrl}
+                        onChange={(event) => setIconImageUrl(event.target.value)}
+                        placeholder="https://example.com/icon.png"
+                        className="bg-slate-950/70 text-white placeholder:text-slate-500"
+                      />
+                    </div>
+                    {iconImageUrl && (
+                      <img
+                        src={iconImageUrl}
+                        alt="Icon preview"
+                        className="h-24 w-24 rounded-2xl border border-slate-700 object-contain bg-slate-950/60"
+                        decoding="async"
+                      />
+                    )}
+                  </div>
+                )}
+
+                  {iconSource !== "none" && (
+                    <div className="space-y-2 rounded-xl border border-slate-700 bg-slate-950/50 p-2.5">
+                      <div className="pb-1">
+                        <Label className="text-xs text-slate-400">Icon Position & Size</Label>
                       </div>
-                      {iconImage && (
-                        <img
-                          src={iconImage}
-                          alt="Icon preview"
-                          className="h-24 w-24 rounded-2xl border border-slate-700 object-contain bg-slate-950/60"
-                          decoding="async"
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-3 text-xs text-slate-400">
+                          <Label className="text-xs text-slate-400">
+                            Horizontal Position
+                          </Label>
+                          <span>{iconPositionX.toFixed(0)}%</span>
+                        </div>
+                        <Input
+                          type="range"
+                          min="0"
+                          max="100"
+                          step="0.1"
+                          value={iconPositionX}
+                          onChange={(event) => setIconPositionX(Number(event.target.value))}
                         />
-                      )}
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-3 text-xs text-slate-400">
+                          <Label className="text-xs text-slate-400">
+                            Vertical Position
+                          </Label>
+                          <span>{iconPositionY.toFixed(0)}%</span>
+                        </div>
+                        <Input
+                          type="range"
+                          min="0"
+                          max="100"
+                          step="0.1"
+                          value={iconPositionY}
+                          onChange={(event) => setIconPositionY(Number(event.target.value))}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-3 text-xs text-slate-400">
+                          <Label className="text-xs text-slate-400">Icon Size</Label>
+                          <span>{iconScale.toFixed(2)}x</span>
+                        </div>
+                        <Input
+                          type="range"
+                          min="0.4"
+                          max="2.5"
+                          step="0.01"
+                          value={iconScale}
+                          onChange={(event) => setIconScale(Number(event.target.value))}
+                        />
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1188,25 +1742,27 @@ const FeaturedImageGenerator = () => {
                   </div>
                 )}
               </div>
-
-              <Button
-                onClick={generateImage}
-                disabled={isGenerating || !selectedTemplateData}
-                className="w-full bg-white text-slate-900 hover:bg-slate-200"
-              >
-                {isGenerating ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Generating...
-                  </>
-                ) : (
-                  "Generate Image"
-                )}
-              </Button>
             </CardContent>
           </Card>
 
-          <PreviewPanel generatedImage={generatedImage} onDownload={downloadImage} />
+          <div className="space-y-4 lg:self-start lg:sticky lg:top-6">
+            <PreviewPanel
+              isLoading={isPreviewLoading}
+              onDownload={downloadImage}
+              previewError={previewError}
+              previewImageUrl={previewImageUrl}
+            />
+            <ApiConfigAccordion
+              curlCommand={curlCommand}
+              isOpen={isApiConfigOpen}
+              jsonPayload={jsonPayload}
+              onCopyCurl={handleCopyCurl}
+              onCopyJson={handleCopyJson}
+              onToggle={() => setIsApiConfigOpen((currentValue) => !currentValue)}
+              payloadResult={generatePayloadResult}
+              requestUrl={requestUrl}
+            />
+          </div>
         </div>
       </div>
 

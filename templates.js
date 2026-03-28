@@ -17,6 +17,28 @@ function extractMainTextFontDefaults(fontString) {
   };
 }
 
+function extractMainTextFontWeightDefault(fontWeight) {
+  return Number(fontWeight) >= 600 ? "bold" : "normal";
+}
+
+function extractIconPositionDefaults(config) {
+  if (!config?.icon || !config?.canvas) {
+    return {
+      iconPositionX: 50,
+      iconPositionY: 50,
+    };
+  }
+
+  return {
+    iconPositionX: Number(
+      (((config.icon.x + config.icon.size / 2) / config.canvas.width) * 100).toFixed(2)
+    ),
+    iconPositionY: Number(
+      (((config.icon.y + config.icon.size / 2) / config.canvas.height) * 100).toFixed(2)
+    ),
+  };
+}
+
 function makeTemplate({
   id,
   name,
@@ -27,6 +49,10 @@ function makeTemplate({
   previewSeed,
 }) {
   const fontDefaults = extractMainTextFontDefaults(config.mainTextField.font);
+  const fontWeightDefault = extractMainTextFontWeightDefault(
+    config.mainTextField.fontWeight
+  );
+  const iconPositionDefaults = extractIconPositionDefaults(config);
   return {
     id,
     name,
@@ -40,6 +66,12 @@ function makeTemplate({
         defaults.mainTextFontFamily || fontDefaults.mainTextFontFamily,
       mainTextFontSize:
         defaults.mainTextFontSize || fontDefaults.mainTextFontSize,
+      mainTextFontWeight:
+        defaults.mainTextFontWeight || fontWeightDefault,
+      iconPositionX:
+        defaults.iconPositionX ?? iconPositionDefaults.iconPositionX,
+      iconPositionY:
+        defaults.iconPositionY ?? iconPositionDefaults.iconPositionY,
     },
     config,
     previewSeed: {
@@ -48,6 +80,12 @@ function makeTemplate({
         previewSeed.mainTextFontFamily || fontDefaults.mainTextFontFamily,
       mainTextFontSize:
         previewSeed.mainTextFontSize || fontDefaults.mainTextFontSize,
+      mainTextFontWeight:
+        previewSeed.mainTextFontWeight || fontWeightDefault,
+      iconPositionX:
+        previewSeed.iconPositionX ?? iconPositionDefaults.iconPositionX,
+      iconPositionY:
+        previewSeed.iconPositionY ?? iconPositionDefaults.iconPositionY,
       flipBackgroundPosition: previewSeed.flipBackgroundPosition || false,
     },
   };
