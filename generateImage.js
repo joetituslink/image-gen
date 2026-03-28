@@ -234,7 +234,26 @@ async function drawBackground(
   drawGradientBackground(ctx, canvas, backgroundInput.gradient);
 }
 
-function resolveTemplateColor(color, colorRole, primaryColor) {
+function applyAlphaToColor(color, alpha) {
+  if (alpha === undefined || alpha === null || alpha >= 1) {
+    return color;
+  }
+
+  if (/^#([a-f\d]{6})$/i.test(color)) {
+    const rgb = hexToRgb(color);
+    return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
+  }
+
+  return color;
+}
+
+function resolveTemplateColor(
+  color,
+  colorRole,
+  primaryColor,
+  surfaceColor,
+  surfaceOpacity
+) {
   if (colorRole === "primaryColor") {
     return primaryColor || color || "#2563eb";
   }
@@ -244,17 +263,46 @@ function resolveTemplateColor(color, colorRole, primaryColor) {
     return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.12)`;
   }
 
+  if (colorRole === "surfaceColor") {
+    return applyAlphaToColor(
+      surfaceColor || color || "#ffffff",
+      surfaceOpacity ?? 1
+    );
+  }
+
   return color || "rgba(255,255,255,0.1)";
 }
 
-function drawDecorations(ctx, decorations, primaryColor) {
+function drawQuadraticPanelPath(ctx, decoration) {
+  ctx.beginPath();
+  ctx.moveTo(decoration.left ?? 0, decoration.top);
+  ctx.lineTo(decoration.startX, decoration.top);
+  ctx.quadraticCurveTo(
+    decoration.controlX,
+    decoration.controlY,
+    decoration.endX,
+    decoration.bottom
+  );
+  ctx.lineTo(decoration.left ?? 0, decoration.bottom);
+  ctx.closePath();
+}
+
+function drawDecorations(
+  ctx,
+  decorations,
+  primaryColor,
+  surfaceColor,
+  surfaceOpacity
+) {
   if (!decorations) return;
 
   decorations.forEach((decoration) => {
     const resolvedColor = resolveTemplateColor(
       decoration.color,
       decoration.colorRole,
-      primaryColor
+      primaryColor,
+      surfaceColor,
+      surfaceOpacity
     );
     ctx.fillStyle = resolvedColor;
     ctx.strokeStyle = resolvedColor;
@@ -301,6 +349,28 @@ function drawDecorations(ctx, decorations, primaryColor) {
           ctx.lineWidth = decoration.strokeWidth;
           ctx.stroke();
         }
+        break;
+      case "quadratic-panel":
+        drawQuadraticPanelPath(ctx, decoration);
+        if (decoration.fill !== false) {
+          ctx.fill();
+        }
+        if (decoration.strokeWidth) {
+          ctx.lineWidth = decoration.strokeWidth;
+          ctx.stroke();
+        }
+        break;
+      case "quadratic-curve":
+        ctx.lineWidth = decoration.strokeWidth || 1;
+        ctx.beginPath();
+        ctx.moveTo(decoration.startX, decoration.startY);
+        ctx.quadraticCurveTo(
+          decoration.controlX,
+          decoration.controlY,
+          decoration.endX,
+          decoration.endY
+        );
+        ctx.stroke();
         break;
     }
   });
@@ -413,6 +483,20 @@ function setFontWeight(fontString, newWeight) {
   return `${newWeight} ${fontString}`;
 }
 
+function applyTextTransform(text, textTransform) {
+  if (!text) return text;
+
+  if (textTransform === "uppercase") {
+    return text.toUpperCase();
+  }
+
+  if (textTransform === "lowercase") {
+    return text.toLowerCase();
+  }
+
+  return text;
+}
+
 function buildLucideSvgDataUri(iconName, color) {
   const cacheKey = `${iconName}:${color}`;
   if (lucideSvgDataUriCache.has(cacheKey)) {
@@ -513,11 +597,13 @@ function drawNameText(
 ) {
   if (!nameConfig || !name) return;
 
-  ctx.fillStyle = primaryColor || nameConfig.defaultColor;
+  ctx.fillStyle =
+    nameConfig.usePrimaryColor === false
+      ? nameConfig.defaultColor
+      : primaryColor || nameConfig.defaultColor;
   ctx.font = nameConfig.font;
 
-  const text =
-    nameConfig.textTransform === "uppercase" ? name.toUpperCase() : name;
+  const text = applyTextTransform(name, nameConfig.textTransform);
   const align = nameConfig.align || "center";
   let x;
   let y;
@@ -581,11 +667,15 @@ function drawMainText(
   if (!mainTextConfig || !mainText) return;
 
   const color = mainTextColor || mainTextConfig.defaultColor;
+  const resolvedMainText = applyTextTransform(
+    mainText,
+    mainTextConfig.textTransform
+  );
   let font = mainTextConfig.font;
   if (mainTextFontFamily) {
     font = setFontFamily(font, mainTextFontFamily);
   }
-  font = setFontWeight(font, 700);
+  font = setFontWeight(font, mainTextConfig.fontWeight || 700);
   if (mainTextFontSize) {
     font = setFontSize(font, mainTextFontSize);
   }
@@ -625,7 +715,7 @@ function drawMainText(
 
   while (currentFontSize >= minFontSize) {
     ctx.font = currentFont;
-    lines = wrapText(ctx, mainText, maxWidth);
+    lines = wrapText(ctx, resolvedMainText, maxWidth);
     const totalHeight = lines.length * lineHeight;
 
     if (lines.length <= maxLines && totalHeight <= maxHeight) {
@@ -643,7 +733,7 @@ function drawMainText(
 
     if (currentFontSize === minFontSize) {
       ctx.font = currentFont;
-      lines = wrapText(ctx, mainText, maxWidth);
+      lines = wrapText(ctx, resolvedMainText, maxWidth);
       break;
     }
   }
@@ -811,7 +901,13 @@ export async function generateImage({
     config.backgroundFallback,
     config.backgroundImagePlacement
   );
-  drawDecorations(ctx, config.decorations, primaryColor);
+  drawDecorations(
+    ctx,
+    config.decorations,
+    primaryColor,
+    surfaceColor,
+    surfaceOpacity
+  );
   const surfaceBounds = drawSurface(
     ctx,
     canvas,
